@@ -1,32 +1,25 @@
 //! World's most advanced clipboard synchronization engine
-
 use super::types::*;
 use crate::{Result, SyncError};
 use arboard::{Clipboard, ImageData};
+#[cfg(target_os = "linux")]
+use arboard::{GetExtLinux, SetExtLinux};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{interval, sleep};
 use tracing::{debug, error, info, warn};
-
-#[cfg(target_os = "linux")]
-use arboard::{GetExtLinux, SetExtLinux};
-
 /// Maximum content size (10MB)
 const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024;
-
 /// Clipboard check interval
 const CLIPBOARD_CHECK_INTERVAL: Duration = Duration::from_millis(250);
-
 /// Rate limiting: max changes per minute
 const MAX_CHANGES_PER_MINUTE: usize = 30;
-
 /// World's most advanced clipboard synchronization engine
 pub struct ClipboardSyncEngine {
     /// System clipboard access
     clipboard: Arc<Mutex<Clipboard>>,
-
     /// Last known clipboard content hash
     last_content_hash: Arc<RwLock<Option<String>>>,
 
@@ -50,14 +43,15 @@ pub struct ClipboardSyncEngine {
 
     /// Statistics
     stats: Arc<RwLock<ClipboardStats>>,
-}
 
+    /// Flag to ignore next clipboard change (when we set it ourselves)
+    ignore_next_change: Arc<RwLock<bool>>,
+}
 /// Configuration for clipboard engine
 #[derive(Debug, Clone)]
 pub struct ClipboardConfig {
     /// Enable image synchronization
     pub sync_images: bool,
-
     /// Enable file synchronization
     pub sync_files: bool,
 
@@ -79,7 +73,6 @@ pub struct ClipboardConfig {
     /// Auto-paste received content
     pub auto_paste: bool,
 }
-
 /// Statistics tracking
 #[derive(Debug)]
 pub struct ClipboardStats {
@@ -89,6 +82,19 @@ pub struct ClipboardStats {
     pub files_synced: u64,
     pub errors: u64,
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl Default for ClipboardStats {
+    fn default() -> Self {
+        Self {
+            items_synced: 0,
+            bytes_synced: 0,
+            images_synced: 0,
+            files_synced: 0,
+            errors: 0,
+            last_sync: None,
+        }
+    }
 }
 
 impl Default for ClipboardConfig {
@@ -105,13 +111,11 @@ impl Default for ClipboardConfig {
         }
     }
 }
-
 impl ClipboardSyncEngine {
     /// Create new world-class clipboard sync engine
     pub fn new(device_id: String, max_history_size: usize) -> Result<Self> {
         let clipboard = Clipboard::new()
             .map_err(|e| SyncError::Unknown(format!("Failed to access system clipboard: {}", e)))?;
-
         info!(
             "🎯 Initialized world-class clipboard engine for device: {}",
             device_id
@@ -127,6 +131,7 @@ impl ClipboardSyncEngine {
             device_id,
             config: ClipboardConfig::default(),
             stats: Arc::new(RwLock::new(ClipboardStats::default())),
+            ignore_next_change: Arc::new(RwLock::new(false)),
         })
     }
 
@@ -141,6 +146,7 @@ impl ClipboardSyncEngine {
         let device_id = self.device_id.clone();
         let config = self.config.clone();
         let stats = Arc::clone(&self.stats);
+        let ignore_flag = Arc::clone(&self.ignore_next_change);
 
         // Spawn intelligent monitoring task
         tokio::spawn(async move {
@@ -151,6 +157,7 @@ impl ClipboardSyncEngine {
                 device_id,
                 config,
                 stats,
+                ignore_flag,
                 tx,
             )
             .await;
@@ -168,6 +175,7 @@ impl ClipboardSyncEngine {
         _device_id: String,
         config: ClipboardConfig,
         stats: Arc<RwLock<ClipboardStats>>,
+        ignore_flag: Arc<RwLock<bool>>,
         sender: mpsc::UnboundedSender<ClipboardItem>,
     ) {
         let mut check_interval = interval(CLIPBOARD_CHECK_INTERVAL);
@@ -179,12 +187,27 @@ impl ClipboardSyncEngine {
         loop {
             check_interval.tick().await;
 
+            // Check if we should ignore the next change
+            let should_ignore = {
+                let mut ignore = ignore_flag.write().await;
+                let should_ignore = *ignore;
+                if should_ignore {
+                    *ignore = false; // Reset flag
+                }
+                should_ignore
+            };
+
+            if should_ignore {
+                debug!("🔇 Ignoring clipboard change (set by network sync)");
+                continue;
+            }
+
             // Rate limiting cleanup
             Self::cleanup_rate_limiter(&rate_limiter).await;
 
             // Check if we're being rate limited
             if Self::is_rate_limited(&rate_limiter).await {
-                debug!("Rate limited, skipping clipboard check");
+                debug!("⏱️ Rate limited, skipping clipboard check");
                 continue;
             }
 
@@ -439,6 +462,12 @@ impl ClipboardSyncEngine {
 
     /// Set clipboard content with intelligent format selection
     pub async fn set_clipboard_content(&self, item: ClipboardItem) -> Result<()> {
+        // Set flag to ignore the next change detection
+        {
+            let mut ignore = self.ignore_next_change.write().await;
+            *ignore = true;
+        }
+
         let mut cb = self.clipboard.lock().await;
 
         // Clone the item before matching to avoid partial move
@@ -449,7 +478,8 @@ impl ClipboardSyncEngine {
                 cb.set_text(&content)
                     .map_err(|e| SyncError::Unknown(format!("Failed to set text: {}", e)))?;
                 info!(
-                    "📋 Set clipboard text: {}",
+                    "📋 ✅ Set clipboard text from {}: {}",
+                    item.source_device,
                     Self::truncate_for_log(&content, 50)
                 );
             }
@@ -484,7 +514,8 @@ impl ClipboardSyncEngine {
                         .map_err(|e| SyncError::Unknown(format!("Failed to set text: {}", e)))?;
                 }
                 info!(
-                    "📋 Set clipboard rich text: {}",
+                    "📋 ✅ Set clipboard rich text from {}: {}",
+                    item.source_device,
                     Self::truncate_for_log(&plain_text, 50)
                 );
             }
@@ -500,8 +531,8 @@ impl ClipboardSyncEngine {
                 cb.set_image(image_data)
                     .map_err(|e| SyncError::Unknown(format!("Failed to set image: {}", e)))?;
                 info!(
-                    "📋 Set clipboard image: {}x{} {:?}",
-                    width, height, primary_format
+                    "📋 ✅ Set clipboard image from {}: {}x{} {:?}",
+                    item.source_device, width, height, primary_format
                 );
             }
 
@@ -518,6 +549,10 @@ impl ClipboardSyncEngine {
                 cb.set_text(&paths_text).map_err(|e| {
                     SyncError::Unknown(format!("Failed to set file paths as text: {}", e))
                 })?;
+                info!(
+                    "📋 ✅ Set clipboard file paths from {} as text",
+                    item.source_device
+                );
             }
 
             ClipboardContent::Binary { .. } => {
@@ -527,7 +562,10 @@ impl ClipboardSyncEngine {
             ClipboardContent::Url { url, .. } => {
                 cb.set_text(&url)
                     .map_err(|e| SyncError::Unknown(format!("Failed to set URL: {}", e)))?;
-                info!("📋 Set clipboard URL: {}", url);
+                info!(
+                    "📋 ✅ Set clipboard URL from {}: {}",
+                    item.source_device, url
+                );
             }
         }
 
@@ -637,19 +675,6 @@ impl ClipboardSyncEngine {
             format!("{}...", &text[..max_len])
         } else {
             text.to_string()
-        }
-    }
-}
-
-impl Default for ClipboardStats {
-    fn default() -> Self {
-        Self {
-            items_synced: 0,
-            bytes_synced: 0,
-            images_synced: 0,
-            files_synced: 0,
-            errors: 0,
-            last_sync: None,
         }
     }
 }

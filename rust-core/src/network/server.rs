@@ -1,5 +1,5 @@
 //! TCP server for handling peer connections
-
+use crate::clipboard::{ClipboardContent, ClipboardItem, ClipboardSyncEngine};
 use crate::network::protocol::{MessageType, SyncMessage, SyncPayload};
 use crate::{Result, SyncConfig, SyncError};
 use std::net::SocketAddr;
@@ -9,14 +9,13 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
-
 /// TCP server for handling peer connections
 pub struct PeerServer {
     config: SyncConfig,
     running: Arc<RwLock<bool>>,
     server_handle: Option<JoinHandle<()>>,
+    clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
 }
-
 impl PeerServer {
     /// Create a new peer server
     pub fn new(config: SyncConfig) -> Self {
@@ -24,7 +23,12 @@ impl PeerServer {
             config,
             running: Arc::new(RwLock::new(false)),
             server_handle: None,
+            clipboard_engine: None,
         }
+    }
+    /// Set the clipboard engine for processing received clipboard data
+    pub fn set_clipboard_engine(&mut self, engine: Arc<ClipboardSyncEngine>) {
+        self.clipboard_engine = Some(engine);
     }
 
     /// Start the TCP server
@@ -41,10 +45,15 @@ impl PeerServer {
 
         *running = true;
 
+        // Clone clipboard engine for the server task
+        let clipboard_engine = self.clipboard_engine.clone();
+
         // Spawn the server in the background
         let running_clone = Arc::clone(&self.running);
         let handle = tokio::spawn(async move {
-            if let Err(e) = Self::accept_connections(listener, running_clone).await {
+            if let Err(e) =
+                Self::accept_connections(listener, running_clone, clipboard_engine).await
+            {
                 error!("TCP server error: {}", e);
             }
         });
@@ -72,8 +81,12 @@ impl PeerServer {
         Ok(())
     }
 
-    /// Accept incoming connections (now static method)
-    async fn accept_connections(listener: TcpListener, running: Arc<RwLock<bool>>) -> Result<()> {
+    /// Accept incoming connections
+    async fn accept_connections(
+        listener: TcpListener,
+        running: Arc<RwLock<bool>>,
+        clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
+    ) -> Result<()> {
         loop {
             let is_running = {
                 let running = running.read().await;
@@ -88,9 +101,14 @@ impl PeerServer {
                 Ok((stream, addr)) => {
                     info!("New peer connection from: {}", addr);
 
+                    // Clone clipboard engine for this connection
+                    let clipboard_engine_clone = clipboard_engine.clone();
+
                     // Handle connection in a separate task
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_peer_connection(stream, addr).await {
+                        if let Err(e) =
+                            Self::handle_peer_connection(stream, addr, clipboard_engine_clone).await
+                        {
                             warn!("Error handling peer connection {}: {}", addr, e);
                         }
                     });
@@ -107,7 +125,11 @@ impl PeerServer {
     }
 
     /// Handle a peer connection
-    async fn handle_peer_connection(mut stream: TcpStream, addr: SocketAddr) -> Result<()> {
+    async fn handle_peer_connection(
+        mut stream: TcpStream,
+        addr: SocketAddr,
+        clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
+    ) -> Result<()> {
         loop {
             // Read message length (4 bytes, big endian)
             let mut length_buffer = [0u8; 4];
@@ -143,20 +165,49 @@ impl PeerServer {
             debug!("Received message from {}: {:?}", addr, message.message_type);
 
             // Process the message
-            Self::process_message(message, &mut stream).await?;
+            Self::process_message(message, &mut stream, &clipboard_engine).await?;
         }
 
         Ok(())
     }
 
     /// Process a received message
-    async fn process_message(message: SyncMessage, stream: &mut TcpStream) -> Result<()> {
+    async fn process_message(
+        message: SyncMessage,
+        stream: &mut TcpStream,
+        clipboard_engine: &Option<Arc<ClipboardSyncEngine>>,
+    ) -> Result<()> {
         // Handle different message types
         match message.message_type {
             MessageType::ClipboardSync => {
-                // Get payload summary for logging
                 let summary = match &message.payload {
                     SyncPayload::Text(text) => {
+                        // Apply text to clipboard!
+                        if let Some(engine) = clipboard_engine {
+                            let clipboard_item = ClipboardItem::new(
+                                ClipboardContent::Text {
+                                    content: text.clone(),
+                                    encoding: "UTF-8".to_string(),
+                                },
+                                message.source_device_id.clone(),
+                            );
+
+                            match engine.set_clipboard_content(clipboard_item).await {
+                                Ok(()) => {
+                                    info!(
+                                        "📋 ✅ Applied clipboard text from {}: {}",
+                                        message.source_device_id,
+                                        Self::truncate_for_log(text, 50)
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!("📋 ❌ Failed to set clipboard text: {}", e);
+                                }
+                            }
+                        } else {
+                            warn!("📋 ❌ No clipboard engine available to apply content");
+                        }
+
                         let preview = if text.len() > 50 {
                             format!("{}...", &text[..50])
                         } else {
@@ -165,53 +216,72 @@ impl PeerServer {
                         format!("Text: {}", preview)
                     }
                     SyncPayload::ClipboardItem(item) => {
+                        // Apply advanced clipboard item!
+                        if let Some(engine) = clipboard_engine {
+                            match engine.set_clipboard_content(item.clone()).await {
+                                Ok(()) => {
+                                    info!(
+                                        "📋 ✅ Applied clipboard item from {}: {}",
+                                        message.source_device_id,
+                                        item.summary()
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!("📋 ❌ Failed to set clipboard item: {}", e);
+                                }
+                            }
+                        } else {
+                            warn!("📋 ❌ No clipboard engine available to apply content");
+                        }
                         format!("ClipboardItem: {}", item.summary())
                     }
                     _ => "Unknown payload type".to_string(),
                 };
 
-                info!("Received clipboard sync: {}", summary);
-                // TODO: Update local clipboard
+                info!(
+                    "📨 Received clipboard sync from {}: {}",
+                    message.source_device_id, summary
+                );
             }
             MessageType::Discovery => {
                 info!(
-                    "Received discovery message from device: {}",
+                    "🔍 Received discovery message from device: {}",
                     message.source_device_id
                 );
             }
             MessageType::PairingRequest => {
                 info!(
-                    "Received pairing request from: {}",
+                    "🤝 Received pairing request from: {}",
                     message.source_device_id
                 );
                 // TODO: Show pairing prompt to user
             }
             MessageType::PairingResponse => {
                 info!(
-                    "Received pairing response from: {}",
+                    "🤝 Received pairing response from: {}",
                     message.source_device_id
                 );
                 // TODO: Complete pairing process
             }
             MessageType::Heartbeat => {
-                debug!("Received heartbeat from: {}", message.source_device_id);
+                debug!("💓 Received heartbeat from: {}", message.source_device_id);
             }
             MessageType::HistoryRequest => {
                 info!(
-                    "Received history request from: {}",
+                    "📚 Received history request from: {}",
                     message.source_device_id
                 );
                 // TODO: Send clipboard history
             }
             MessageType::HistoryResponse => {
                 info!(
-                    "Received history response from: {}",
+                    "📚 Received history response from: {}",
                     message.source_device_id
                 );
                 // TODO: Process clipboard history
             }
             MessageType::Statistics => {
-                info!("Received statistics from: {}", message.source_device_id);
+                info!("📊 Received statistics from: {}", message.source_device_id);
                 // TODO: Process statistics
             }
         }
@@ -221,5 +291,14 @@ impl PeerServer {
         stream.flush().await?;
 
         Ok(())
+    }
+
+    /// Truncate text for logging
+    fn truncate_for_log(text: &str, max_len: usize) -> String {
+        if text.len() > max_len {
+            format!("{}...", &text[..max_len])
+        } else {
+            text.to_string()
+        }
     }
 }

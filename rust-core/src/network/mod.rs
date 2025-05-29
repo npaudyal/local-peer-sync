@@ -2,16 +2,14 @@ pub mod discovery;
 pub mod peer;
 pub mod protocol;
 pub mod server;
-
+use crate::clipboard::ClipboardSyncEngine;
+use crate::{Result, SyncConfig};
 pub use discovery::DiscoveryService;
 pub use peer::{Peer, PeerManager};
 pub use protocol::{MessageType, SyncMessage};
 pub use server::PeerServer;
-
-use crate::{Result, SyncConfig};
 use std::sync::Arc;
 use tracing::info;
-
 /// Main network synchronization manager
 pub struct SyncManager {
     config: SyncConfig,
@@ -19,11 +17,9 @@ pub struct SyncManager {
     peer_manager: Arc<PeerManager>,
     server: Arc<tokio::sync::RwLock<PeerServer>>,
 }
-
 impl SyncManager {
     pub async fn new(config: SyncConfig) -> Result<Self> {
         config.validate()?;
-
         let peer_manager = Arc::new(PeerManager::new());
         let discovery = Arc::new(DiscoveryService::new(
             config.clone(),
@@ -37,6 +33,13 @@ impl SyncManager {
             peer_manager,
             server,
         })
+    }
+
+    /// Set the clipboard engine for the server to handle received clipboard data
+    pub async fn set_clipboard_engine(&self, engine: Arc<ClipboardSyncEngine>) {
+        let mut server = self.server.write().await;
+        server.set_clipboard_engine(engine);
+        info!("📋 Connected clipboard engine to network server");
     }
 
     pub async fn start_discovery(&mut self) -> Result<()> {

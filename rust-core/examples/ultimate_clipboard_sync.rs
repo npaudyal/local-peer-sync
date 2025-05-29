@@ -1,10 +1,8 @@
 //! Ultimate clipboard synchronization test - The world's best clipboard sync
-
 use local_peer_sync_core::clipboard::{ClipboardConfig, ClipboardContent, ClipboardSyncEngine};
 use local_peer_sync_core::{LocalPeerSync, SyncConfig};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize premium logging
@@ -13,7 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_target(false)
         .with_thread_ids(true)
         .init();
-
     println!("🏆 WORLD'S BEST CLIPBOARD SYNC - ULTIMATE TEST");
     println!("==============================================");
     println!("Features:");
@@ -25,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Real-time statistics");
     println!("🛡️  Rate limiting and error recovery");
     println!("💾 Smart history with deduplication");
+    println!("🔄 Bidirectional clipboard sync");
     println!();
 
     // Detect platform and show capabilities
@@ -65,13 +63,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create network sync with enhanced capabilities
     let device_name = format!(
         "Ultimate-{}-{}",
-        platform.chars().take(1).collect::<String>(),
+        platform.chars().take(3).collect::<String>(),
         rand::random::<u16>()
     );
     let sync_config = SyncConfig::with_device_name(device_name.clone());
     let sync = Arc::new(LocalPeerSync::new(sync_config).await?);
 
     println!("🚀 Device: {} ({})", device_name, &device_id[..8]);
+
+    // Convert to Arc for sharing
+    let clipboard_engine = Arc::new(clipboard_engine);
+
+    // 🔥 CRITICAL: Connect clipboard engine to network service BEFORE starting
+    println!("🔗 Connecting clipboard engine to network service...");
+    sync.set_clipboard_engine(Arc::clone(&clipboard_engine))
+        .await?;
 
     // Start sync service
     if let Err(e) = sync.start().await {
@@ -80,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("⚡ Service started! Advanced clipboard monitoring active...");
+    println!("🔗 Network service connected to clipboard engine!");
     println!();
     println!("🎯 TEST INSTRUCTIONS:");
     println!("1. Copy TEXT in any app → Watch instant sync");
@@ -89,47 +96,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("5. Run on multiple devices to see cross-platform magic!");
     println!();
     println!("📊 Statistics will be shown every 30 seconds");
+    println!("🔄 Content copied on ANY device will appear on ALL devices!");
     println!("Press Ctrl+C to stop...");
     println!();
 
-    let clipboard_engine = Arc::new(clipboard_engine);
     let sync_clone = Arc::clone(&sync);
     let engine_clone = Arc::clone(&clipboard_engine);
 
     // Handle clipboard changes with advanced processing
     tokio::spawn(async move {
         while let Some(clipboard_item) = clipboard_rx.recv().await {
-            println!("📋 CLIPBOARD CHANGED: {}", clipboard_item.summary());
+            println!("📋 LOCAL CLIPBOARD CHANGED: {}", clipboard_item.summary());
             println!(
-                "   Size: {} bytes | Hash: {}...",
+                "   Size: {} bytes | Hash: {}... | Source: {}",
                 clipboard_item.content_size(),
-                &clipboard_item.content_hash[..8]
+                &clipboard_item.content_hash[..8],
+                clipboard_item.source_device
             );
 
-            // Convert to legacy format for network sync
-            let legacy_content = match &clipboard_item.content {
-                ClipboardContent::Text { content, .. } => content.clone(),
-                ClipboardContent::RichText { plain_text, .. } => plain_text.clone(),
-                ClipboardContent::Url { url, .. } => url.clone(),
-                _ => clipboard_item.summary(),
-            };
+            // Only broadcast if this change originated locally (not from network)
+            if clipboard_item.source_device == "local" {
+                // Convert to legacy format for network sync
+                let legacy_content = match &clipboard_item.content {
+                    ClipboardContent::Text { content, .. } => content.clone(),
+                    ClipboardContent::RichText { plain_text, .. } => plain_text.clone(),
+                    ClipboardContent::Url { url, .. } => url.clone(),
+                    _ => clipboard_item.summary(),
+                };
 
-            // Get current peers
-            match sync_clone.get_peers().await {
-                Ok(peers) => {
-                    if peers.is_empty() {
-                        println!("   📡 No peers connected - message queued");
-                    } else {
-                        println!("   📤 Broadcasting to {} peer(s): {:?}", peers.len(), peers);
+                // Get current peers
+                match sync_clone.get_peers().await {
+                    Ok(peers) => {
+                        if peers.is_empty() {
+                            println!("   📡 No peers connected - content ready for sync when peers connect");
+                        } else {
+                            println!("   📤 Broadcasting to {} peer(s): {:?}", peers.len(), peers);
 
-                        // Send via network - adjust method name as needed
-                        match sync_clone.sync_clipboard(legacy_content).await {
-                            Ok(()) => println!("   ✅ Sync successful!"),
-                            Err(e) => eprintln!("   ❌ Sync failed: {}", e),
+                            // Send via network
+                            match sync_clone.sync_clipboard(legacy_content).await {
+                                Ok(()) => println!("   ✅ Broadcast successful!"),
+                                Err(e) => eprintln!("   ❌ Broadcast failed: {}", e),
+                            }
                         }
                     }
+                    Err(e) => eprintln!("   ❌ Failed to get peers: {}", e),
                 }
-                Err(e) => eprintln!("   ❌ Failed to get peers: {}", e),
+            } else {
+                println!("   📨 Received from network - applied to local clipboard");
             }
 
             println!();
@@ -147,6 +160,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(peers) => {
                 if !peers.is_empty() {
                     println!("🌐 Connected peers: {} {:?}", peers.len(), peers);
+                } else if stats_counter % 6 == 0 {
+                    // Show this message every minute when no peers
+                    println!(
+                        "🔍 Searching for peers... (start this app on other devices to connect)"
+                    );
                 }
             }
             Err(e) => eprintln!("❌ Peer status error: {}", e),
