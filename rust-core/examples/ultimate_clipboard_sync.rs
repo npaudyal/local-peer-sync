@@ -87,6 +87,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("⚡ Service started! Advanced clipboard monitoring active...");
     println!("🔗 Network service connected to clipboard engine!");
+    println!("🌐 Listening on port: {}", sync.get_config().port);
+    println!("🆔 Device ID: {}", sync.get_config().device_id);
     println!();
     println!("🎯 TEST INSTRUCTIONS:");
     println!("1. Copy TEXT in any app → Watch instant sync");
@@ -159,11 +161,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match sync.get_peers().await {
             Ok(peers) => {
                 if !peers.is_empty() {
-                    println!("🌐 Connected peers: {} {:?}", peers.len(), peers);
+                    println!("🌐 Connected peers: {}", peers.len());
+                    for (i, peer) in peers.iter().enumerate() {
+                        println!("   {}. {}", i + 1, peer);
+                    }
                 } else if stats_counter % 6 == 0 {
-                    // Show this message every minute when no peers
+                    println!("🔍 No peers found. Troubleshooting:");
+                    println!("   • Are both devices on the same WiFi network?");
                     println!(
-                        "🔍 Searching for peers... (start this app on other devices to connect)"
+                        "   • Is port {} open on both devices?",
+                        sync.get_config().port
+                    );
+                    println!(
+                        "   • Try running: telnet <other-device-ip> {}",
+                        sync.get_config().port
                     );
                 }
             }

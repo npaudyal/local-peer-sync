@@ -177,35 +177,53 @@ impl PeerServer {
         stream: &mut TcpStream,
         clipboard_engine: &Option<Arc<ClipboardSyncEngine>>,
     ) -> Result<()> {
+        info!(
+            "🔍 Processing message type: {:?} from {}",
+            message.message_type, message.source_device_id
+        );
+
         // Handle different message types
         match message.message_type {
             MessageType::ClipboardSync => {
+                info!(
+                    "📨 Received clipboard sync message from: {}",
+                    message.source_device_id
+                );
+
+                // Check if we have clipboard engine
+                if clipboard_engine.is_none() {
+                    error!("❌ No clipboard engine available! Cannot apply clipboard content.");
+                    return Ok(());
+                }
+
+                let engine = clipboard_engine.as_ref().unwrap();
+                info!("✅ Clipboard engine available, processing payload...");
+
                 let summary = match &message.payload {
                     SyncPayload::Text(text) => {
-                        // Apply text to clipboard!
-                        if let Some(engine) = clipboard_engine {
-                            let clipboard_item = ClipboardItem::new(
-                                ClipboardContent::Text {
-                                    content: text.clone(),
-                                    encoding: "UTF-8".to_string(),
-                                },
-                                message.source_device_id.clone(),
-                            );
+                        info!("📝 Processing text payload: {} chars", text.len());
 
-                            match engine.set_clipboard_content(clipboard_item).await {
-                                Ok(()) => {
-                                    info!(
-                                        "📋 ✅ Applied clipboard text from {}: {}",
-                                        message.source_device_id,
-                                        Self::truncate_for_log(text, 50)
-                                    );
-                                }
-                                Err(e) => {
-                                    warn!("📋 ❌ Failed to set clipboard text: {}", e);
-                                }
+                        // Apply text to clipboard!
+                        let clipboard_item = ClipboardItem::new(
+                            ClipboardContent::Text {
+                                content: text.clone(),
+                                encoding: "UTF-8".to_string(),
+                            },
+                            message.source_device_id.clone(),
+                        );
+
+                        info!("🔄 Attempting to set clipboard content...");
+                        match engine.set_clipboard_content(clipboard_item).await {
+                            Ok(()) => {
+                                info!(
+                                    "📋 ✅ Successfully applied clipboard text from {}: {}",
+                                    message.source_device_id,
+                                    Self::truncate_for_log(text, 50)
+                                );
                             }
-                        } else {
-                            warn!("📋 ❌ No clipboard engine available to apply content");
+                            Err(e) => {
+                                error!("📋 ❌ Failed to set clipboard text: {}", e);
+                            }
                         }
 
                         let preview = if text.len() > 50 {
@@ -216,30 +234,32 @@ impl PeerServer {
                         format!("Text: {}", preview)
                     }
                     SyncPayload::ClipboardItem(item) => {
+                        info!("📎 Processing clipboard item: {}", item.summary());
+
                         // Apply advanced clipboard item!
-                        if let Some(engine) = clipboard_engine {
-                            match engine.set_clipboard_content(item.clone()).await {
-                                Ok(()) => {
-                                    info!(
-                                        "📋 ✅ Applied clipboard item from {}: {}",
-                                        message.source_device_id,
-                                        item.summary()
-                                    );
-                                }
-                                Err(e) => {
-                                    warn!("📋 ❌ Failed to set clipboard item: {}", e);
-                                }
+                        info!("🔄 Attempting to set clipboard item...");
+                        match engine.set_clipboard_content(item.clone()).await {
+                            Ok(()) => {
+                                info!(
+                                    "📋 ✅ Successfully applied clipboard item from {}: {}",
+                                    message.source_device_id,
+                                    item.summary()
+                                );
                             }
-                        } else {
-                            warn!("📋 ❌ No clipboard engine available to apply content");
+                            Err(e) => {
+                                error!("📋 ❌ Failed to set clipboard item: {}", e);
+                            }
                         }
                         format!("ClipboardItem: {}", item.summary())
                     }
-                    _ => "Unknown payload type".to_string(),
+                    _ => {
+                        warn!("❓ Unknown payload type in clipboard sync message");
+                        "Unknown payload type".to_string()
+                    }
                 };
 
                 info!(
-                    "📨 Received clipboard sync from {}: {}",
+                    "📨 ✅ Processed clipboard sync from {}: {}",
                     message.source_device_id, summary
                 );
             }
@@ -254,14 +274,12 @@ impl PeerServer {
                     "🤝 Received pairing request from: {}",
                     message.source_device_id
                 );
-                // TODO: Show pairing prompt to user
             }
             MessageType::PairingResponse => {
                 info!(
                     "🤝 Received pairing response from: {}",
                     message.source_device_id
                 );
-                // TODO: Complete pairing process
             }
             MessageType::Heartbeat => {
                 debug!("💓 Received heartbeat from: {}", message.source_device_id);
@@ -271,24 +289,23 @@ impl PeerServer {
                     "📚 Received history request from: {}",
                     message.source_device_id
                 );
-                // TODO: Send clipboard history
             }
             MessageType::HistoryResponse => {
                 info!(
                     "📚 Received history response from: {}",
                     message.source_device_id
                 );
-                // TODO: Process clipboard history
             }
             MessageType::Statistics => {
                 info!("📊 Received statistics from: {}", message.source_device_id);
-                // TODO: Process statistics
             }
         }
 
         // Send ACK response
+        info!("📤 Sending ACK response...");
         stream.write_all(b"ACK\n").await?;
         stream.flush().await?;
+        info!("✅ ACK sent successfully");
 
         Ok(())
     }
