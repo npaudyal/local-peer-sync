@@ -1,5 +1,4 @@
 //! Real mDNS-based peer discovery service
-
 use crate::network::peer::{Peer, PeerManager};
 use crate::{Result, SyncConfig, SyncError};
 use if_addrs::{get_if_addrs, IfAddr};
@@ -9,7 +8,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
-
 /// Service for discovering peers on the local network
 pub struct DiscoveryService {
     config: SyncConfig,
@@ -17,7 +15,6 @@ pub struct DiscoveryService {
     peer_manager: Arc<PeerManager>,
     discovered_peers: Arc<RwLock<HashMap<String, DiscoveredPeer>>>,
 }
-
 /// Represents a discovered peer device
 #[derive(Debug, Clone)]
 pub struct DiscoveredPeer {
@@ -26,7 +23,6 @@ pub struct DiscoveredPeer {
     pub address: SocketAddr,
     pub txt_data: HashMap<String, String>,
 }
-
 impl DiscoveryService {
     pub fn new(config: SyncConfig, peer_manager: Arc<PeerManager>) -> Result<Self> {
         Ok(Self {
@@ -36,7 +32,6 @@ impl DiscoveryService {
             discovered_peers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
-
     /// Start advertising this device and discovering peers
     pub async fn start(&self) -> Result<()> {
         let mut running = self.running.write().await;
@@ -258,14 +253,27 @@ impl DiscoveryService {
 
                         // Convert to Peer and add to peer manager
                         let peer = Peer::new(
-                            discovered_peer.device_id,
-                            discovered_peer.name,
+                            discovered_peer.device_id.clone(),
+                            discovered_peer.name.clone(),
                             discovered_peer.address,
                         );
 
+                        // Add peer to peer manager
                         peer_manager.add_peer(peer).await;
+
+                        // 🔥 CRITICAL FIX: Auto-trust discovered peers for testing
+                        info!("🤝 Auto-trusting discovered peer: {}", device_id);
+                        if let Err(e) = peer_manager.trust_peer(&device_id).await {
+                            warn!("❌ Failed to auto-trust peer {}: {}", device_id, e);
+                        } else {
+                            info!(
+                                "✅ Successfully auto-trusted peer: {}",
+                                discovered_peer.name
+                            );
+                        }
+
                         info!(
-                            "Discovered new peer: {} ({}) at {}",
+                            "✅ Discovered and trusted new peer: {} ({}) at {}",
                             info.get_hostname(),
                             device_id,
                             ip_addr

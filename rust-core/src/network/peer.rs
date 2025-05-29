@@ -1,5 +1,4 @@
 //! Peer management and communication
-
 use crate::network::protocol::SyncMessage;
 use crate::{Result, SyncError};
 use serde::{Deserialize, Serialize};
@@ -10,14 +9,12 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
-
+use tracing::{debug, error, info, warn};
 /// Represents a discovered peer device
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Peer {
     /// Unique device identifier
     pub device_id: String,
-
     /// Human-readable device name
     pub device_name: String,
 
@@ -34,12 +31,10 @@ pub struct Peer {
     /// Connection status
     pub is_connected: bool,
 }
-
 /// Custom serialization for Instant as Unix timestamp
 mod timestamp_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH}; // Keep them here where they're used
-
     pub fn serialize<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -74,7 +69,6 @@ mod timestamp_serde {
         Ok(Instant::now() - Duration::from_secs(duration_ago))
     }
 }
-
 impl Peer {
     pub fn new(device_id: String, device_name: String, address: SocketAddr) -> Self {
         Self {
@@ -86,7 +80,6 @@ impl Peer {
             is_connected: false,
         }
     }
-
     /// Check if peer is online (seen within last 60 seconds)
     pub fn is_online(&self) -> bool {
         self.last_seen.elapsed() < Duration::from_secs(60)
@@ -102,16 +95,13 @@ impl Peer {
         self.is_trusted = trusted;
     }
 }
-
 /// Manages all discovered and trusted peers
 pub struct PeerManager {
     /// All discovered peers
     peers: Arc<RwLock<HashMap<String, Peer>>>,
-
     /// Active connections to peers
     connections: Arc<RwLock<HashMap<String, TcpStream>>>,
 }
-
 impl PeerManager {
     pub fn new() -> Self {
         Self {
@@ -119,7 +109,6 @@ impl PeerManager {
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-
     /// Add or update a discovered peer
     pub async fn add_peer(&self, peer: Peer) {
         let mut peers = self.peers.write().await;
@@ -129,12 +118,12 @@ impl PeerManager {
             existing_peer.address = peer.address;
             existing_peer.device_name = peer.device_name;
             existing_peer.update_last_seen();
-            debug!("Updated peer: {}", existing_peer.device_name);
+            debug!("Updated existing peer: {}", existing_peer.device_name);
         } else {
             // Add new peer
             info!(
-                "Discovered new peer: {} ({})",
-                peer.device_name, peer.device_id
+                "📱 Added new peer: {} ({}) at {}",
+                peer.device_name, peer.device_id, peer.address
             );
             peers.insert(peer.device_id.clone(), peer);
         }
@@ -143,11 +132,29 @@ impl PeerManager {
     /// Get all trusted peers
     pub async fn get_trusted_peers(&self) -> Vec<Peer> {
         let peers = self.peers.read().await;
-        peers
+        let trusted_peers: Vec<Peer> = peers
             .values()
             .filter(|peer| peer.is_trusted && peer.is_online())
             .cloned()
-            .collect()
+            .collect();
+
+        info!(
+            "🔍 Found {} trusted peers out of {} total peers",
+            trusted_peers.len(),
+            peers.len()
+        );
+
+        // Debug: Show all peers and their trust status
+        for peer in peers.values() {
+            debug!(
+                "Peer: {} - Trusted: {} - Online: {}",
+                peer.device_name,
+                peer.is_trusted,
+                peer.is_online()
+            );
+        }
+
+        trusted_peers
     }
 
     /// Get all discovered peers
@@ -162,9 +169,13 @@ impl PeerManager {
 
         if let Some(peer) = peers.get_mut(device_id) {
             peer.set_trusted(true);
-            info!("Peer {} is now trusted", peer.device_name);
+            info!(
+                "🤝 Peer {} ({}) is now trusted",
+                peer.device_name, device_id
+            );
             Ok(())
         } else {
+            error!("❌ Peer {} not found for trusting", device_id);
             Err(SyncError::Trust(format!("Peer {} not found", device_id)))
         }
     }
@@ -189,66 +200,137 @@ impl PeerManager {
     }
 
     /// Broadcast a message to all trusted peers
-    /// Broadcast a message to all trusted peers
     pub async fn broadcast_message(&self, message: SyncMessage) -> Result<()> {
         let trusted_peers = self.get_trusted_peers().await;
 
         if trusted_peers.is_empty() {
-            debug!("No trusted peers to broadcast to");
+            warn!("📡 No trusted peers to broadcast to! Check if peers are being auto-trusted.");
             return Ok(());
         }
 
+        info!(
+            "📤 Starting broadcast to {} trusted peers",
+            trusted_peers.len()
+        );
+
         let message_json = message.to_json()?;
         let mut success_count = 0;
+        let mut error_count = 0;
 
         // Use &trusted_peers to iterate by reference instead of moving
         for peer in &trusted_peers {
-            // <- Add & here
+            info!(
+                "📨 Attempting to send to peer: {} ({})",
+                peer.device_name, peer.address
+            );
+
             match self.send_message_to_peer(peer, &message_json).await {
-                // peer is already &Peer
                 Ok(()) => {
                     success_count += 1;
-                    debug!("Message sent to peer: {}", peer.device_name);
+                    info!("✅ Successfully sent message to peer: {}", peer.device_name);
                 }
                 Err(e) => {
-                    warn!("Failed to send message to {}: {}", peer.device_name, e);
+                    error_count += 1;
+                    error!("❌ Failed to send message to {}: {}", peer.device_name, e);
                 }
             }
         }
 
-        info!(
-            "Broadcast message to {}/{} peers",
-            success_count,
-            trusted_peers.len() // Now this works because trusted_peers wasn't moved
-        );
-        Ok(())
+        if success_count > 0 {
+            info!(
+                "🎉 Broadcast completed: {}/{} peers successful",
+                success_count,
+                trusted_peers.len()
+            );
+            Ok(())
+        } else {
+            error!(
+                "💥 Broadcast failed: 0/{} peers reached (errors: {})",
+                trusted_peers.len(),
+                error_count
+            );
+            Err(SyncError::Network(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                format!("Failed to reach any of {} peers", trusted_peers.len()),
+            )))
+        }
     }
 
     /// Send a message to a specific peer
     async fn send_message_to_peer(&self, peer: &Peer, message: &str) -> Result<()> {
-        // Try to establish connection if not exists
-        let mut stream = TcpStream::connect(peer.address).await?;
+        info!(
+            "🔄 Attempting to send message to peer: {} at {}",
+            peer.device_name, peer.address
+        );
+
+        // Try to establish connection
+        info!("🔌 Connecting to {}...", peer.address);
+        let mut stream = match TcpStream::connect(peer.address).await {
+            Ok(stream) => {
+                info!("✅ Successfully connected to {}", peer.address);
+                stream
+            }
+            Err(e) => {
+                error!("❌ Failed to connect to {}: {}", peer.address, e);
+                return Err(SyncError::Network(e));
+            }
+        };
 
         // Send message length first (4 bytes, big endian)
         let message_bytes = message.as_bytes();
         let length = message_bytes.len() as u32;
-        stream.write_all(&length.to_be_bytes()).await?;
+
+        info!(
+            "📤 Sending message length: {} bytes to {}",
+            length, peer.address
+        );
+        if let Err(e) = stream.write_all(&length.to_be_bytes()).await {
+            error!(
+                "❌ Failed to send message length to {}: {}",
+                peer.address, e
+            );
+            return Err(SyncError::Network(e));
+        }
 
         // Send message content
-        stream.write_all(message_bytes).await?;
-        stream.flush().await?;
+        info!("📤 Sending message content to {}", peer.address);
+        if let Err(e) = stream.write_all(message_bytes).await {
+            error!(
+                "❌ Failed to send message content to {}: {}",
+                peer.address, e
+            );
+            return Err(SyncError::Network(e));
+        }
+
+        if let Err(e) = stream.flush().await {
+            error!("❌ Failed to flush stream to {}: {}", peer.address, e);
+            return Err(SyncError::Network(e));
+        }
+
+        info!(
+            "✅ Message sent successfully to {}, waiting for ACK...",
+            peer.address
+        );
 
         // Read response (simple ACK)
         let mut response = [0u8; 4];
-        stream.read_exact(&mut response).await?;
-
-        if &response == b"ACK\n" {
-            Ok(())
-        } else {
-            Err(SyncError::Network(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Invalid response from peer",
-            )))
+        match stream.read_exact(&mut response).await {
+            Ok(_) => {
+                if &response == b"ACK\n" {
+                    info!("✅ Received ACK from {}", peer.address);
+                    Ok(())
+                } else {
+                    error!("❌ Invalid response from {}: {:?}", peer.address, response);
+                    Err(SyncError::Network(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid response from peer",
+                    )))
+                }
+            }
+            Err(e) => {
+                error!("❌ Failed to read ACK from {}: {}", peer.address, e);
+                Err(SyncError::Network(e))
+            }
         }
     }
 
@@ -280,7 +362,6 @@ impl PeerManager {
             .collect()
     }
 }
-
 impl Default for PeerManager {
     fn default() -> Self {
         Self::new()
