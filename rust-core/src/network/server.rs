@@ -87,6 +87,8 @@ impl PeerServer {
         running: Arc<RwLock<bool>>,
         clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
     ) -> Result<()> {
+        info!("🚀 TCP server accept loop started, waiting for connections...");
+
         loop {
             let is_running = {
                 let running = running.read().await;
@@ -99,28 +101,31 @@ impl PeerServer {
 
             match listener.accept().await {
                 Ok((stream, addr)) => {
-                    info!("New peer connection from: {}", addr);
+                    info!("🔗 NEW CONNECTION! Peer connected from: {}", addr);
 
                     // Clone clipboard engine for this connection
                     let clipboard_engine_clone = clipboard_engine.clone();
 
                     // Handle connection in a separate task
                     tokio::spawn(async move {
+                        info!("🔄 Spawning handler task for connection from: {}", addr);
                         if let Err(e) =
                             Self::handle_peer_connection(stream, addr, clipboard_engine_clone).await
                         {
-                            warn!("Error handling peer connection {}: {}", addr, e);
+                            warn!("❌ Error handling peer connection {}: {}", addr, e);
+                        } else {
+                            info!("✅ Connection from {} handled successfully", addr);
                         }
                     });
                 }
                 Err(e) => {
-                    error!("Failed to accept connection: {}", e);
+                    error!("❌ Failed to accept connection: {}", e);
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 }
             }
         }
 
-        info!("TCP server accept loop ended");
+        info!("🛑 TCP server accept loop ended");
         Ok(())
     }
 
@@ -130,16 +135,27 @@ impl PeerServer {
         addr: SocketAddr,
         clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
     ) -> Result<()> {
+        info!("🔍 Starting to handle connection from: {}", addr);
+
         loop {
+            info!("📥 Waiting for message from: {}", addr);
+
             // Read message length (4 bytes, big endian)
             let mut length_buffer = [0u8; 4];
             match stream.read_exact(&mut length_buffer).await {
-                Ok(_) => {}
+                Ok(_) => {
+                    let message_length = u32::from_be_bytes(length_buffer) as usize;
+                    info!(
+                        "📏 Received message length: {} bytes from {}",
+                        message_length, addr
+                    );
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    debug!("Peer {} disconnected", addr);
+                    info!("👋 Peer {} disconnected (EOF)", addr);
                     break;
                 }
                 Err(e) => {
+                    error!("❌ Error reading message length from {}: {}", addr, e);
                     return Err(SyncError::Network(e));
                 }
             }
@@ -148,26 +164,70 @@ impl PeerServer {
 
             // Validate message length
             if message_length > 10 * 1024 * 1024 {
-                // 10MB max
-                warn!("Message too large from {}: {} bytes", addr, message_length);
+                warn!(
+                    "⚠️ Message too large from {}: {} bytes",
+                    addr, message_length
+                );
                 break;
             }
 
             // Read message content
+            info!(
+                "📖 Reading {} bytes of message content from {}",
+                message_length, addr
+            );
             let mut message_buffer = vec![0u8; message_length];
-            stream.read_exact(&mut message_buffer).await?;
+            match stream.read_exact(&mut message_buffer).await {
+                Ok(_) => {
+                    info!("✅ Successfully read message content from {}", addr);
+                }
+                Err(e) => {
+                    error!("❌ Error reading message content from {}: {}", addr, e);
+                    return Err(SyncError::Network(e));
+                }
+            }
 
             // Parse message
-            let message_str = String::from_utf8(message_buffer)
-                .map_err(|e| SyncError::Unknown(format!("Invalid UTF-8: {}", e)))?;
+            let message_str = String::from_utf8(message_buffer).map_err(|e| {
+                error!("❌ Invalid UTF-8 from {}: {}", addr, e);
+                SyncError::Unknown(format!("Invalid UTF-8: {}", e))
+            })?;
 
-            let message = SyncMessage::from_json(&message_str)?;
-            debug!("Received message from {}: {:?}", addr, message.message_type);
+            info!(
+                "🔍 Parsing JSON message from {}: {} chars",
+                addr,
+                message_str.len()
+            );
+
+            let message = match SyncMessage::from_json(&message_str) {
+                Ok(msg) => {
+                    info!(
+                        "✅ Successfully parsed message from {}: {:?}",
+                        addr, msg.message_type
+                    );
+                    msg
+                }
+                Err(e) => {
+                    error!("❌ Failed to parse message from {}: {}", addr, e);
+                    error!("❌ Raw message: {}", message_str);
+                    return Err(e);
+                }
+            };
 
             // Process the message
-            Self::process_message(message, &mut stream, &clipboard_engine).await?;
+            info!("🔄 Processing message from {}", addr);
+            match Self::process_message(message, &mut stream, &clipboard_engine).await {
+                Ok(()) => {
+                    info!("✅ Message processed successfully from {}", addr);
+                }
+                Err(e) => {
+                    error!("❌ Error processing message from {}: {}", addr, e);
+                    return Err(e);
+                }
+            }
         }
 
+        info!("🔚 Connection handler for {} finished", addr);
         Ok(())
     }
 
