@@ -11,9 +11,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
 
-# Real mDNS implementation (REPLACE the old mdns dependency)
-mdns-sd = "0.7"          # Cross-platform mDNS/Bonjour
-if-addrs = "0.10"        # Network interface discovery
+# Real mDNS implementation
+mdns-sd = "0.7"
+if-addrs = "0.10"
 
 # Networking
 socket2 = "0.5"
@@ -44,8 +44,15 @@ sled = "0.34"
 hostname = "0.3"
 tempfile = "3.8"
 
-[profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+# Premium Clipboard Features
+arboard = "3.3"                    # Best cross-platform clipboard
+image = { version = "0.24", features = ["png", "jpeg", "gif", "webp"] }
+base64 = "0.21"
+sha2 = "0.10"                     # For content hashing
+lz4 = "1.24"                      # For compression
+mime_guess = "2.0"                # MIME type detection
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"                      # For cross-platform directories
+
+[dev-dependencies]
+if-addrs = "0.10"

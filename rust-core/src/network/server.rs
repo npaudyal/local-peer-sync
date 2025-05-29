@@ -1,6 +1,6 @@
 //! TCP server for handling peer connections
 
-use crate::network::protocol::SyncMessage;
+use crate::network::protocol::{MessageType, SyncMessage, SyncPayload};
 use crate::{Result, SyncConfig, SyncError};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -153,35 +153,66 @@ impl PeerServer {
     async fn process_message(message: SyncMessage, stream: &mut TcpStream) -> Result<()> {
         // Handle different message types
         match message.message_type {
-            crate::network::protocol::MessageType::Clipboard => {
-                info!(
-                    "Received clipboard sync: {}",
-                    &message.payload[..message.payload.len().min(50)]
-                );
+            MessageType::ClipboardSync => {
+                // Get payload summary for logging
+                let summary = match &message.payload {
+                    SyncPayload::Text(text) => {
+                        let preview = if text.len() > 50 {
+                            format!("{}...", &text[..50])
+                        } else {
+                            text.clone()
+                        };
+                        format!("Text: {}", preview)
+                    }
+                    SyncPayload::ClipboardItem(item) => {
+                        format!("ClipboardItem: {}", item.summary())
+                    }
+                    _ => "Unknown payload type".to_string(),
+                };
+
+                info!("Received clipboard sync: {}", summary);
                 // TODO: Update local clipboard
             }
-            crate::network::protocol::MessageType::Discovery => {
+            MessageType::Discovery => {
                 info!(
                     "Received discovery message from device: {}",
                     message.source_device_id
                 );
             }
-            crate::network::protocol::MessageType::PairingRequest => {
+            MessageType::PairingRequest => {
                 info!(
                     "Received pairing request from: {}",
                     message.source_device_id
                 );
                 // TODO: Show pairing prompt to user
             }
-            crate::network::protocol::MessageType::PairingResponse => {
+            MessageType::PairingResponse => {
                 info!(
                     "Received pairing response from: {}",
                     message.source_device_id
                 );
                 // TODO: Complete pairing process
             }
-            crate::network::protocol::MessageType::Heartbeat => {
+            MessageType::Heartbeat => {
                 debug!("Received heartbeat from: {}", message.source_device_id);
+            }
+            MessageType::HistoryRequest => {
+                info!(
+                    "Received history request from: {}",
+                    message.source_device_id
+                );
+                // TODO: Send clipboard history
+            }
+            MessageType::HistoryResponse => {
+                info!(
+                    "Received history response from: {}",
+                    message.source_device_id
+                );
+                // TODO: Process clipboard history
+            }
+            MessageType::Statistics => {
+                info!("Received statistics from: {}", message.source_device_id);
+                // TODO: Process statistics
             }
         }
 
