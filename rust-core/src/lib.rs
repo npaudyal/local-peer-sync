@@ -2,6 +2,7 @@
 //!
 //! High-performance, secure clipboard synchronization across devices
 //! on the same local network.
+
 pub mod clipboard;
 pub mod config;
 pub mod crypto;
@@ -9,20 +10,24 @@ pub mod error;
 pub mod ffi;
 pub mod network;
 pub mod storage;
+
 // Re-export main types for easier usage
 pub use clipboard::ClipboardSyncEngine;
 pub use config::SyncConfig;
 pub use error::{Result, SyncError};
 pub use network::SyncManager;
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
+
 /// Main synchronization manager
 pub struct LocalPeerSync {
     config: SyncConfig,
     manager: Arc<RwLock<SyncManager>>,
     running: Arc<RwLock<bool>>,
 }
+
 impl LocalPeerSync {
     /// Create a new LocalPeerSync instance
     pub async fn new(config: SyncConfig) -> Result<Self> {

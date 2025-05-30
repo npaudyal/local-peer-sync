@@ -1,0 +1,556 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		F770D9E42DE8F8B4007F62D3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F770D9CD2DE8F8AD007F62D3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F770D9D42DE8F8AD007F62D3;
+			remoteInfo = LocalPeerSync;
+		};
+		F770D9EE2DE8F8B4007F62D3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F770D9CD2DE8F8AD007F62D3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F770D9D42DE8F8AD007F62D3;
+			remoteInfo = LocalPeerSync;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		F770D9D52DE8F8AD007F62D3 /* LocalPeerSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalPeerSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F770D9E32DE8F8B4007F62D3 /* LocalPeerSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LocalPeerSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F770D9ED2DE8F8B4007F62D3 /* LocalPeerSyncUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LocalPeerSyncUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		F770DA1D2DE9000D007F62D3 /* Exceptions for "LocalPeerSync" folder in "Copy Bundle Resources" phase from "LocalPeerSync" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = F770D9D32DE8F8AD007F62D3 /* Resources */;
+			membershipExceptions = (
+				liblocal_peer_sync_core.dylib,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		F770D9D72DE8F8AD007F62D3 /* LocalPeerSync */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F770DA1D2DE9000D007F62D3 /* Exceptions for "LocalPeerSync" folder in "Copy Bundle Resources" phase from "LocalPeerSync" target */,
+			);
+			path = LocalPeerSync;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F770D9D22DE8F8AD007F62D3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9E02DE8F8B4007F62D3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9EA2DE8F8B4007F62D3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F770D9CC2DE8F8AD007F62D3 = {
+			isa = PBXGroup;
+			children = (
+				F770D9D72DE8F8AD007F62D3 /* LocalPeerSync */,
+				F770D9D62DE8F8AD007F62D3 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F770D9D62DE8F8AD007F62D3 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F770D9D52DE8F8AD007F62D3 /* LocalPeerSync.app */,
+				F770D9E32DE8F8B4007F62D3 /* LocalPeerSyncTests.xctest */,
+				F770D9ED2DE8F8B4007F62D3 /* LocalPeerSyncUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F770D9D42DE8F8AD007F62D3 /* LocalPeerSync */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F770D9F72DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSync" */;
+			buildPhases = (
+				F770D9D12DE8F8AD007F62D3 /* Sources */,
+				F770D9D22DE8F8AD007F62D3 /* Frameworks */,
+				F770D9D32DE8F8AD007F62D3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F770D9D72DE8F8AD007F62D3 /* LocalPeerSync */,
+			);
+			name = LocalPeerSync;
+			packageProductDependencies = (
+			);
+			productName = LocalPeerSync;
+			productReference = F770D9D52DE8F8AD007F62D3 /* LocalPeerSync.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F770D9E22DE8F8B4007F62D3 /* LocalPeerSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F770D9FA2DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSyncTests" */;
+			buildPhases = (
+				F770D9DF2DE8F8B4007F62D3 /* Sources */,
+				F770D9E02DE8F8B4007F62D3 /* Frameworks */,
+				F770D9E12DE8F8B4007F62D3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F770D9E52DE8F8B4007F62D3 /* PBXTargetDependency */,
+			);
+			name = LocalPeerSyncTests;
+			packageProductDependencies = (
+			);
+			productName = LocalPeerSyncTests;
+			productReference = F770D9E32DE8F8B4007F62D3 /* LocalPeerSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F770D9EC2DE8F8B4007F62D3 /* LocalPeerSyncUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F770D9FD2DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSyncUITests" */;
+			buildPhases = (
+				F770D9E92DE8F8B4007F62D3 /* Sources */,
+				F770D9EA2DE8F8B4007F62D3 /* Frameworks */,
+				F770D9EB2DE8F8B4007F62D3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F770D9EF2DE8F8B4007F62D3 /* PBXTargetDependency */,
+			);
+			name = LocalPeerSyncUITests;
+			packageProductDependencies = (
+			);
+			productName = LocalPeerSyncUITests;
+			productReference = F770D9ED2DE8F8B4007F62D3 /* LocalPeerSyncUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F770D9CD2DE8F8AD007F62D3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					F770D9D42DE8F8AD007F62D3 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					F770D9E22DE8F8B4007F62D3 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F770D9D42DE8F8AD007F62D3;
+					};
+					F770D9EC2DE8F8B4007F62D3 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F770D9D42DE8F8AD007F62D3;
+					};
+				};
+			};
+			buildConfigurationList = F770D9D02DE8F8AD007F62D3 /* Build configuration list for PBXProject "LocalPeerSync" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = F770D9CC2DE8F8AD007F62D3;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F770D9D62DE8F8AD007F62D3 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F770D9D42DE8F8AD007F62D3 /* LocalPeerSync */,
+				F770D9E22DE8F8B4007F62D3 /* LocalPeerSyncTests */,
+				F770D9EC2DE8F8B4007F62D3 /* LocalPeerSyncUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F770D9D32DE8F8AD007F62D3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9E12DE8F8B4007F62D3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9EB2DE8F8B4007F62D3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F770D9D12DE8F8AD007F62D3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9DF2DE8F8B4007F62D3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F770D9E92DE8F8B4007F62D3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F770D9E52DE8F8B4007F62D3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F770D9D42DE8F8AD007F62D3 /* LocalPeerSync */;
+			targetProxy = F770D9E42DE8F8B4007F62D3 /* PBXContainerItemProxy */;
+		};
+		F770D9EF2DE8F8B4007F62D3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F770D9D42DE8F8AD007F62D3 /* LocalPeerSync */;
+			targetProxy = F770D9EE2DE8F8B4007F62D3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F770D9F52DE8F8B5007F62D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F770D9F62DE8F8B5007F62D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		F770D9F82DE8F8B5007F62D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LocalPeerSync/LocalPeerSync.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "2025 LocalPeerSync. All rights reserved.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LocalPeerSync needs access to your local network to discover and sync with other devices.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/LocalPeerSync",
+					"$(PROJECT_DIR)",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F770D9F92DE8F8B5007F62D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LocalPeerSync/LocalPeerSync.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "2025 LocalPeerSync. All rights reserved.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LocalPeerSync needs access to your local network to discover and sync with other devices.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/LocalPeerSync",
+					"$(PROJECT_DIR)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=*]" = "$(SRCROOT)/LocalPeerSync";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F770D9FB2DE8F8B5007F62D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSyncTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LocalPeerSync.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LocalPeerSync";
+			};
+			name = Debug;
+		};
+		F770D9FC2DE8F8B5007F62D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSyncTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LocalPeerSync.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LocalPeerSync";
+			};
+			name = Release;
+		};
+		F770D9FE2DE8F8B5007F62D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSyncUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = LocalPeerSync;
+			};
+			name = Debug;
+		};
+		F770D9FF2DE8F8B5007F62D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.LocalPeerSyncUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = LocalPeerSync;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F770D9D02DE8F8AD007F62D3 /* Build configuration list for PBXProject "LocalPeerSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F770D9F52DE8F8B5007F62D3 /* Debug */,
+				F770D9F62DE8F8B5007F62D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F770D9F72DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F770D9F82DE8F8B5007F62D3 /* Debug */,
+				F770D9F92DE8F8B5007F62D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F770D9FA2DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSyncTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F770D9FB2DE8F8B5007F62D3 /* Debug */,
+				F770D9FC2DE8F8B5007F62D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F770D9FD2DE8F8B5007F62D3 /* Build configuration list for PBXNativeTarget "LocalPeerSyncUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F770D9FE2DE8F8B5007F62D3 /* Debug */,
+				F770D9FF2DE8F8B5007F62D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F770D9CD2DE8F8AD007F62D3 /* Project object */;
+}
