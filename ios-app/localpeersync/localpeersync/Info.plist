@@ -11,6 +11,10 @@
 	<array>
 		<dict/>
 	</array>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_localpeersync._tcp</string>
+	</array>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>LocalPeerSync sends notifications when clipboard content is synced between your devices.</string>
 	<key>UIBackgroundModes</key>

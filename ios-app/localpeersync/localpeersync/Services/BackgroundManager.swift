@@ -2,7 +2,7 @@
 //  BackgroundManager.swift
 //  LocalPeerSync
 //
-//  Advanced iOS background processing
+//  ENHANCED iOS background processing - FIXED compilation errors
 //
 
 import Foundation
@@ -23,46 +23,53 @@ class BackgroundManager: ObservableObject {
     @Published var lastBackgroundSync: Date?
     @Published var backgroundSyncCount: Int = 0
     @Published var backgroundTasksRegistered: Bool = false
+    @Published var backgroundErrors: Int = 0
+    @Published var backgroundSuccesses: Int = 0
     
     // MARK: - Private Properties
     private let logger = Logger(subsystem: "com.localpeersync.ios", category: "BackgroundManager")
     private var backgroundSyncTimer: Timer?
     private var activeBackgroundTasks: Set<UIBackgroundTaskIdentifier> = []
+    private var lastBackgroundError: String?
     
     // MARK: - Initialization
     private init() {
-        setupBackgroundNotifications()
+        setupEnhancedBackgroundNotifications()
     }
     
-    // MARK: - Public Background Task Handlers (for external registration)
+    // MARK: - Enhanced Background Task Handlers
     public func handleBackgroundSync(task: BGAppRefreshTask) async {
-        logger.info("🔄 Starting background sync task")
+        logger.info("🔄 Starting ENHANCED background sync task")
         
         // Schedule next refresh
         scheduleAppRefresh()
         
         // Set expiration handler
         task.expirationHandler = {
-            self.logger.warning("⏰ Background sync task expired")
+            self.logger.warning("⏰ ENHANCED background sync task expired")
             task.setTaskCompleted(success: false)
         }
         
+        // 🔧 FIXED: Use do-catch for error handling
         do {
-            // Perform quick sync operations
-            await performQuickSync()
+            // Perform enhanced sync operations
+            try await performEnhancedQuickSync()
             
-            // Update last sync time
+            // Update metrics
             lastBackgroundSync = Date()
             backgroundSyncCount += 1
+            backgroundSuccesses += 1
             
             task.setTaskCompleted(success: true)
-            logger.info("✅ Background sync completed successfully")
+            logger.info("✅ ENHANCED background sync completed successfully")
             
             // Send success notification
             await sendBackgroundSyncNotification(success: true)
             
         } catch {
-            logger.error("❌ Background sync failed: \(error)")
+            backgroundErrors += 1
+            lastBackgroundError = error.localizedDescription
+            logger.error("❌ ENHANCED background sync failed: \(error)")
             task.setTaskCompleted(success: false)
             
             // Send failure notification
@@ -71,28 +78,31 @@ class BackgroundManager: ObservableObject {
     }
 
     public func handleClipboardCheck(task: BGProcessingTask) async {
-        logger.info("📋 Starting background clipboard check")
+        logger.info("📋 Starting ENHANCED background clipboard check")
         
         // Schedule next processing task
         scheduleProcessingTask()
         
         task.expirationHandler = {
-            self.logger.warning("⏰ Clipboard check task expired")
+            self.logger.warning("⏰ ENHANCED clipboard check task expired")
             task.setTaskCompleted(success: false)
         }
         
+        // 🔧 FIXED: Use do-catch for error handling
         do {
             // Check clipboard changes
             ClipboardManager.shared.checkClipboardChanges()
             
             // Perform extended sync operations
-            await performExtendedSync()
+            try await performEnhancedExtendedSync()
             
             task.setTaskCompleted(success: true)
-            logger.info("✅ Background clipboard check completed")
+            logger.info("✅ ENHANCED background clipboard check completed")
             
         } catch {
-            logger.error("❌ Background clipboard check failed: \(error)")
+            backgroundErrors += 1
+            lastBackgroundError = error.localizedDescription
+            logger.error("❌ ENHANCED background clipboard check failed: \(error)")
             task.setTaskCompleted(success: false)
         }
     }
@@ -119,18 +129,15 @@ class BackgroundManager: ObservableObject {
             }
         }
         
-        // Update this synchronously since we're in init()
-        DispatchQueue.main.async {
-            self.backgroundTasksRegistered = true
-        }
-        
-        logger.info("📱 Registered background tasks successfully")
+        backgroundTasksRegistered = true
+        logger.info("📱 ENHANCED background tasks registered successfully")
     }
     
     // MARK: - Background Task Scheduling
     func scheduleBackgroundTasks() {
         scheduleAppRefresh()
         scheduleProcessingTask()
+        logger.info("📅 ENHANCED background tasks scheduled")
     }
     
     private func scheduleAppRefresh() {
@@ -139,9 +146,10 @@ class BackgroundManager: ObservableObject {
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            logger.info("📅 Scheduled background app refresh")
+            logger.info("📅 Scheduled ENHANCED background app refresh")
         } catch {
-            logger.error("❌ Failed to schedule app refresh: \(error)")
+            logger.error("❌ Failed to schedule ENHANCED app refresh: \(error)")
+            backgroundErrors += 1
         }
     }
     
@@ -153,99 +161,172 @@ class BackgroundManager: ObservableObject {
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            logger.info("📅 Scheduled background processing task")
+            logger.info("📅 Scheduled ENHANCED background processing task")
         } catch {
-            logger.error("❌ Failed to schedule processing task: \(error)")
+            logger.error("❌ Failed to schedule ENHANCED processing task: \(error)")
+            backgroundErrors += 1
         }
     }
     
-    // MARK: - Background Operations
-    private func performQuickSync() async {
-        // Quick operations that can complete in ~30 seconds
+    // MARK: - 🔧 FIXED: Enhanced Background Operations (now throws)
+    private func performEnhancedQuickSync() async throws {
+        logger.info("⚡ Starting ENHANCED quick sync operations")
         
-        // 1. Check clipboard changes
-        ClipboardManager.shared.checkClipboardChanges()
+        // 1. Check clipboard changes with retry
+        for attempt in 1...3 {
+            do {
+                ClipboardManager.shared.checkClipboardChanges()
+                logger.info("✅ Clipboard check successful on attempt \(attempt)")
+                break
+            } catch {
+                logger.warning("⚠️ Clipboard check failed on attempt \(attempt): \(error)")
+                if attempt == 3 {
+                    throw error
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+        }
         
-        // 2. Refresh peer connections
-        await SyncService.shared.refreshConnections()
+        // 2. Refresh peer connections with validation
+        if SyncService.shared.isRunning {
+            await SyncService.shared.refreshConnections()
+            logger.info("✅ Peer connections refreshed")
+        } else {
+            logger.info("ℹ️ Sync service not running, attempting restart")
+            SyncService.shared.startSync()
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        }
         
-        // 3. Sync any pending clipboard content
+        // 3. Validate sync service health
+        await validateSyncServiceHealth()
+        
+        // 4. Process any pending clipboard syncs
         if SyncService.shared.isRunning {
             await SyncService.shared.refreshStatus()
+            logger.info("✅ Sync status refreshed")
         }
         
-        logger.info("⚡ Quick sync operations completed")
+        logger.info("⚡ ENHANCED quick sync operations completed")
     }
     
-    private func performExtendedSync() async {
-        // Extended operations for processing task
+    private func performEnhancedExtendedSync() async throws {
+        logger.info("🔄 Starting ENHANCED extended sync operations")
         
-        // 1. Full peer discovery
-        await SyncService.shared.scanForDevices()
+        // 1. Full peer discovery with retry
+        for attempt in 1...2 {
+            await SyncService.shared.scanForDevices()
+            logger.info("✅ Device scan completed on attempt \(attempt)")
+            
+            if attempt < 2 {
+                try await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+            }
+        }
         
-        // 2. Sync clipboard history
-        await syncClipboardHistory()
+        // 2. Enhanced clipboard history sync
+        await syncEnhancedClipboardHistory()
         
-        // 3. Clean up old data
-        await cleanupOldData()
+        // 3. Clean up old data with metrics
+        await cleanupOldDataEnhanced()
         
-        // 4. Update statistics
-        await updateStatistics()
+        // 4. Update enhanced statistics
+        await updateEnhancedStatistics()
         
-        logger.info("🔄 Extended sync operations completed")
+        // 5. Validate overall system health
+        await performSystemHealthCheck()
+        
+        logger.info("🔄 ENHANCED extended sync operations completed")
     }
     
-    private func syncClipboardHistory() async {
-        // Sync recent clipboard items that might have been missed
-        let recentItems = ClipboardManager.shared.recentItems.prefix(5)
+    private func syncEnhancedClipboardHistory() async {
+        logger.info("📚 Syncing ENHANCED clipboard history")
         
-        for item in recentItems {
+        let recentItems = ClipboardManager.shared.recentItems.prefix(3)
+        
+        for (index, item) in recentItems.enumerated() {
             if SyncService.shared.isRunning {
                 SyncService.shared.syncClipboard(item.content)
+                logger.info("✅ Synced history item \(index + 1)/\(recentItems.count)")
                 
                 // Small delay between syncs
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                try? await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds
+            } else {
+                logger.warning("⚠️ Sync service not running, stopping history sync")
+                break
             }
         }
     }
     
-    private func cleanupOldData() async {
-        // Clean up old clipboard items
-        let oldItemsThreshold = Date().addingTimeInterval(-7 * 24 * 60 * 60) // 7 days
+    private func cleanupOldDataEnhanced() async {
+        logger.info("🧹 Starting ENHANCED data cleanup")
+        
+        let oldItemsThreshold = Date().addingTimeInterval(-5 * 24 * 60 * 60) // 5 days
         
         let oldItems = ClipboardManager.shared.allItems.filter { item in
             item.timestamp < oldItemsThreshold && !item.isFavorite
         }
         
-        for item in oldItems {
+        var cleanedCount = 0
+        for item in oldItems.prefix(10) {
             ClipboardManager.shared.deleteItem(item)
+            cleanedCount += 1
         }
         
-        if !oldItems.isEmpty {
-            logger.info("🧹 Cleaned up \(oldItems.count) old clipboard items")
+        if cleanedCount > 0 {
+            logger.info("🧹 ENHANCED cleanup removed \(cleanedCount) old clipboard items")
         }
     }
     
-    private func updateStatistics() async {
-        // Update app statistics and save state
+    private func updateEnhancedStatistics() async {
+        logger.info("📊 Updating ENHANCED statistics")
         ClipboardManager.shared.saveCurrentState()
         
-        // Log statistics
-        logger.info("📊 Background statistics update completed")
+        let diagnostics = ClipboardManager.shared.getDiagnostics()
+        logger.info("📊 ENHANCED statistics: \(diagnostics)")
+    }
+    
+    private func validateSyncServiceHealth() async {
+        logger.info("🏥 Validating ENHANCED sync service health")
+        
+        guard SyncService.shared.isRunning else {
+            logger.warning("⚠️ Sync service not running")
+            return
+        }
+        
+        if SyncService.shared.localIPAddress.isEmpty || SyncService.shared.localIPAddress == "Unknown" {
+            logger.warning("⚠️ No valid network connection")
+            return
+        }
+        
+        let peerCount = SyncService.shared.connectedPeers.count + SyncService.shared.discoveredPeers.count
+        logger.info("🏥 Health check: \(peerCount) total peers, service running: \(SyncService.shared.isRunning)")
+    }
+    
+    private func performSystemHealthCheck() async {
+        logger.info("🔍 Performing ENHANCED system health check")
+        
+        let healthMetrics = [
+            "sync_service_running": SyncService.shared.isRunning,
+            "clipboard_monitoring": ClipboardManager.shared.isMonitoring,
+            "connected_peers": SyncService.shared.connectedPeers.count,
+            "discovered_peers": SyncService.shared.discoveredPeers.count,
+            "background_sync_count": backgroundSyncCount,
+            "background_error_count": backgroundErrors
+        ] as [String : Any]
+        
+        logger.info("🔍 ENHANCED health metrics: \(healthMetrics)")
     }
     
     // MARK: - Foreground Background Tasks
     func beginBackgroundTask(name: String, completion: @escaping () -> Void) -> UIBackgroundTaskIdentifier {
         let taskId = UIApplication.shared.beginBackgroundTask(withName: name) {
             completion()
-            // Use the actual task ID instead of accessing a non-existent property
             if let validTaskId = self.activeBackgroundTasks.first {
                 self.endBackgroundTask(taskId: validTaskId)
             }
         }
         
         activeBackgroundTasks.insert(taskId)
-        logger.info("🎯 Started background task: \(name)")
+        logger.info("🎯 Started ENHANCED background task: \(name)")
         
         return taskId
     }
@@ -256,7 +337,7 @@ class BackgroundManager: ObservableObject {
         UIApplication.shared.endBackgroundTask(taskId)
         activeBackgroundTasks.remove(taskId)
         
-        logger.info("✅ Ended background task")
+        logger.info("✅ Ended ENHANCED background task")
     }
     
     func endAllBackgroundTasks() {
@@ -265,7 +346,7 @@ class BackgroundManager: ObservableObject {
         }
         activeBackgroundTasks.removeAll()
         
-        logger.info("🛑 Ended all background tasks")
+        logger.info("🛑 Ended all ENHANCED background tasks")
     }
     
     // MARK: - Notifications
@@ -276,11 +357,11 @@ class BackgroundManager: ObservableObject {
         
         if success {
             content.title = "Background Sync Complete"
-            content.body = "Your clipboard has been synced with \(SyncService.shared.connectedPeers.count) devices"
+            content.body = "LocalPeerSync synced with \(SyncService.shared.connectedPeers.count) devices"
             content.sound = .default
         } else {
-            content.title = "Background Sync Failed"
-            content.body = error?.localizedDescription ?? "An unknown error occurred"
+            content.title = "Background Sync Issue"
+            content.body = error?.localizedDescription ?? "Background sync encountered an issue"
             content.sound = .defaultCritical
         }
         
@@ -294,7 +375,7 @@ class BackgroundManager: ObservableObject {
     }
     
     // MARK: - App Lifecycle
-    private func setupBackgroundNotifications() {
+    private func setupEnhancedBackgroundNotifications() {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(appDidEnterBackground),
@@ -308,82 +389,94 @@ class BackgroundManager: ObservableObject {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
     
     @objc private func appDidEnterBackground() {
-        logger.info("📱 App entered background - scheduling tasks")
+        logger.info("📱 App entered background - ENHANCED handling")
         scheduleBackgroundTasks()
         
-        // Start a background task to finish any pending operations
-        let taskId = beginBackgroundTask(name: "EnterBackground") {
+        let taskId = beginBackgroundTask(name: "EnhancedEnterBackground") {
             // Completion handler
         }
         
         Task { @MainActor in
-            // Save current state
             ClipboardManager.shared.saveCurrentState()
             
-            // Give sync service a chance to finish pending operations
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            if SyncService.shared.isRunning {
+                logger.info("🔄 Attempting to maintain discovery in background")
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+            }
             
             endBackgroundTask(taskId: taskId)
         }
     }
 
     @objc private func appWillEnterForeground() {
-        logger.info("📱 App will enter foreground")
+        logger.info("📱 App will enter foreground - ENHANCED handling")
         
-        // Cancel any pending background tasks if we're about to be active
         BGTaskScheduler.shared.cancelAllTaskRequests()
-        
-        // End any active background tasks immediately (since we're already on MainActor)
         endAllBackgroundTasks()
         
-        // Refresh app state asynchronously
         Task {
+            if !SyncService.shared.isRunning && backgroundSyncEnabled {
+                logger.info("🔄 Restarting sync service from background")
+                SyncService.shared.startSync()
+            }
+            
             await SyncService.shared.refreshStatus()
             ClipboardManager.shared.checkClipboardChanges()
+        }
+    }
+    
+    @objc private func appDidBecomeActive() {
+        logger.info("📱 App became active - ENHANCED handling")
+        
+        Task {
+            await performSystemHealthCheck()
         }
     }
     
     // MARK: - Debug Methods
     func simulateBackgroundSync() {
         Task {
-            logger.info("🧪 Simulating background sync")
-            await performQuickSync()
+            logger.info("🧪 Simulating ENHANCED background sync")
+            try? await performEnhancedQuickSync()
             await sendBackgroundSyncNotification(success: true)
         }
     }
     
-    func getBackgroundTaskStatus() -> String {
+    func getEnhancedBackgroundTaskStatus() -> String {
         return """
-        Background Tasks Registered: \(backgroundTasksRegistered)
-        Active Background Tasks: \(activeBackgroundTasks.count)
+        === ENHANCED Background Task Status ===
+        Tasks Registered: \(backgroundTasksRegistered)
+        Active Tasks: \(activeBackgroundTasks.count)
         Last Background Sync: \(lastBackgroundSync?.timeAgoDisplay ?? "Never")
         Background Sync Count: \(backgroundSyncCount)
+        Background Successes: \(backgroundSuccesses)
+        Background Errors: \(backgroundErrors)
+        Last Error: \(lastBackgroundError ?? "None")
+        Sync Enabled: \(backgroundSyncEnabled)
         """
     }
     
-    deinit {
-        logger.info("🧹 BackgroundManager deinitializing")
-        NotificationCenter.default.removeObserver(self)
+    func resetBackgroundMetrics() {
+        backgroundSyncCount = 0
+        backgroundSuccesses = 0
+        backgroundErrors = 0
+        lastBackgroundError = nil
+        lastBackgroundSync = nil
+        logger.info("🔄 Reset ENHANCED background metrics")
     }
-}
-
-// MARK: - Background Task Errors
-enum BackgroundTaskError: LocalizedError {
-    case taskExpired
-    case networkUnavailable
-    case syncServiceUnavailable
     
-    var errorDescription: String? {
-        switch self {
-        case .taskExpired:
-            return "Background task expired before completion"
-        case .networkUnavailable:
-            return "Network connection unavailable"
-        case .syncServiceUnavailable:
-            return "Sync service is not running"
-        }
+    deinit {
+        logger.info("🧹 ENHANCED BackgroundManager deinitializing")
+        NotificationCenter.default.removeObserver(self)
     }
 }

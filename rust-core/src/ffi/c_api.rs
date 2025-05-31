@@ -355,3 +355,76 @@ pub extern "C" fn sync_cleanup(handle: *mut SyncHandle) {
         let _ = handle.runtime.block_on(async { handle.sync.stop().await });
     }
 }
+
+/// Get health status for debugging
+#[no_mangle]
+pub extern "C" fn sync_get_health_status(handle: *mut SyncHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+
+    let handle = unsafe { &*handle };
+
+    let health_status = handle.runtime.block_on(async {
+        let manager = handle.sync.manager.read().await;
+        manager.health_check().await
+    });
+
+    let status_json = serde_json::json!({
+        "tcp_server_running": health_status.tcp_server_running,
+        "peer_count": health_status.peer_count,
+        "rust_mdns_enabled": health_status.rust_mdns_enabled,
+        "platform": health_status.platform
+    });
+
+    match serde_json::to_string(&status_json) {
+        Ok(json) => match CString::new(json) {
+            Ok(c_string) => c_string.into_raw(),
+            Err(_) => ptr::null_mut(),
+        },
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Force sync a clipboard item (enhanced version)
+#[no_mangle]
+pub extern "C" fn sync_clipboard_enhanced(
+    handle: *mut SyncHandle,
+    content: *const c_char,
+    source_device: *const c_char,
+) -> c_int {
+    if handle.is_null() || content.is_null() {
+        return 0;
+    }
+
+    let handle = unsafe { &*handle };
+    
+    let content_str = match unsafe { CStr::from_ptr(content) }.to_str() {
+        Ok(content) => content.to_string(),
+        Err(_) => return 0,
+    };
+
+    let source_str = if source_device.is_null() {
+        "iOS".to_string()
+    } else {
+        match unsafe { CStr::from_ptr(source_device) }.to_str() {
+            Ok(source) => source.to_string(),
+            Err(_) => "iOS".to_string(),
+        }
+    };
+
+    info!("📋 Enhanced clipboard sync from {}: {} chars", source_str, content_str.len());
+
+    match handle.runtime.block_on(async {
+        handle.sync.sync_clipboard(content_str).await
+    }) {
+        Ok(_) => {
+            info!("✅ Enhanced clipboard sync successful");
+            1
+        }
+        Err(e) => {
+            error!("❌ Enhanced clipboard sync failed: {}", e);
+            0
+        }
+    }
+}

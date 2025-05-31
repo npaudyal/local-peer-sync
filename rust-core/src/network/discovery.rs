@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
+
 /// Service for discovering peers on the local network
 pub struct DiscoveryService {
     config: SyncConfig,
@@ -15,6 +16,7 @@ pub struct DiscoveryService {
     peer_manager: Arc<PeerManager>,
     discovered_peers: Arc<RwLock<HashMap<String, DiscoveredPeer>>>,
 }
+
 /// Represents a discovered peer device
 #[derive(Debug, Clone)]
 pub struct DiscoveredPeer {
@@ -23,6 +25,7 @@ pub struct DiscoveredPeer {
     pub address: SocketAddr,
     pub txt_data: HashMap<String, String>,
 }
+
 impl DiscoveryService {
     pub fn new(config: SyncConfig, peer_manager: Arc<PeerManager>) -> Result<Self> {
         Ok(Self {
@@ -32,6 +35,7 @@ impl DiscoveryService {
             discovered_peers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
+
     /// Start advertising this device and discovering peers
     pub async fn start(&self) -> Result<()> {
         let mut running = self.running.write().await;
@@ -40,7 +44,7 @@ impl DiscoveryService {
         }
 
         info!(
-            "Starting real mDNS discovery for service: {}",
+            "🚀 Starting ENHANCED mDNS discovery for service: {}",
             self.config.service_type
         );
 
@@ -52,7 +56,7 @@ impl DiscoveryService {
             )))
         })?;
 
-        info!("mDNS daemon created successfully");
+        info!("✅ mDNS daemon created successfully");
 
         // Start advertising our service
         self.start_advertising(&mdns).await?;
@@ -61,7 +65,7 @@ impl DiscoveryService {
         self.start_discovery(mdns).await?;
 
         *running = true;
-        info!("mDNS discovery service started successfully");
+        info!("🎉 ENHANCED mDNS discovery service started successfully");
         Ok(())
     }
 
@@ -72,31 +76,32 @@ impl DiscoveryService {
             return Ok(());
         }
 
-        info!("Stopping mDNS discovery");
+        info!("🛑 Stopping mDNS discovery");
         *running = false;
         Ok(())
     }
 
     /// Advertise this device on the network
     async fn start_advertising(&self, mdns: &ServiceDaemon) -> Result<()> {
-        // Get local IP address
+        // Get local IP address with enhanced logic
         let local_ip = self.get_local_ip().await?;
 
-        info!(
-            "Advertising as: {} on {}:{}",
-            self.config.device_name, local_ip, self.config.port
-        );
+        info!("🎯 ADVERTISING DETAILS:");
+        info!("   📱 Device: {}", self.config.device_name);
+        info!("   🆔 ID: {}", self.config.device_id);
+        info!("   🌐 IP: {}", local_ip);
+        info!("   🔌 Port: {}", self.config.port);
 
         // Convert IP to proper format
         let ip_addrs = match local_ip {
             IpAddr::V4(ipv4) => vec![ipv4],
             IpAddr::V6(_) => {
-                // Fall back to localhost if IPv6
+                warn!("⚠️ IPv6 address, falling back to localhost");
                 vec![Ipv4Addr::new(127, 0, 0, 1)]
             }
         };
 
-        // Create TXT properties as simple key-value pairs
+        // Create TXT properties to match what Mac is sending
         let device_id = self.config.device_id.clone();
         let version_str = env!("CARGO_PKG_VERSION").to_string();
         let encryption_str = if self.config.encryption_enabled {
@@ -106,7 +111,6 @@ impl DiscoveryService {
         };
         let port_str = self.config.port.to_string();
 
-        // Use array instead of vec! for clippy
         let txt_properties = [
             ("device_id", device_id.as_str()),
             ("version", version_str.as_str()),
@@ -114,20 +118,15 @@ impl DiscoveryService {
             ("port", port_str.as_str()),
         ];
 
-        // Ensure service type ends with .local.
-        let service_type = if self.config.service_type.ends_with(".local.") {
-            self.config.service_type.clone()
-        } else if self.config.service_type.ends_with("._tcp") {
-            format!("{}.local.", self.config.service_type)
-        } else {
-            format!("{}._tcp.local.", self.config.service_type)
-        };
+        info!("📝 TXT Properties: {:?}", txt_properties);
 
-        info!("Using service type: {}", service_type);
+        // Ensure service type is EXACTLY like Mac
+        let service_type = "_localpeersync._tcp.local.";
+        info!("🔧 Using EXACT service type: {}", service_type);
 
         // Create service info
         let service_info = ServiceInfo::new(
-            &service_type,            // Corrected service type
+            service_type,             // Use exact service type
             &self.config.device_name, // Instance name
             &self.config.device_name, // Hostname
             &ip_addrs[..],            // IP addresses as slice
@@ -149,53 +148,57 @@ impl DiscoveryService {
             )))
         })?;
 
-        info!("Successfully registered mDNS service");
+        info!("🎉 Successfully registered mDNS service");
+        info!(
+            "🔍 Other devices should now see: {}",
+            self.config.device_name
+        );
         Ok(())
     }
 
     /// Discover other peers on the network
     async fn start_discovery(&self, mdns: ServiceDaemon) -> Result<()> {
-        // Ensure service type for browsing is correct
-        let service_type = if self.config.service_type.ends_with(".local.") {
-            self.config.service_type.clone()
-        } else if self.config.service_type.ends_with("._tcp") {
-            format!("{}.local.", self.config.service_type)
-        } else {
-            format!("{}._tcp.local.", self.config.service_type)
-        };
+        // Use EXACT service type to match Mac
+        let service_type = "_localpeersync._tcp.local.";
 
         let peer_manager = Arc::clone(&self.peer_manager);
         let discovered_peers = Arc::clone(&self.discovered_peers);
         let our_device_id = self.config.device_id.clone();
 
-        info!(
-            "Starting to browse for peers with service: {}",
-            service_type
-        );
+        info!("🔍 DISCOVERY STARTUP:");
+        info!("   🎯 Looking for: {}", service_type);
+        info!("   🚫 Ignoring our ID: {}", our_device_id);
+        info!("   🔍 Expected to find: Ultimate-mac-* devices");
 
         // Create a channel for receiving discovery events
         let (tx, mut rx) = mpsc::channel(100);
 
         // Start browsing for services
-        let browser = mdns.browse(&service_type).map_err(|e| {
+        let browser = mdns.browse(service_type).map_err(|e| {
             SyncError::Network(std::io::Error::other(format!(
                 "Failed to start browsing: {}",
                 e
             )))
         })?;
 
+        info!("✅ mDNS browser created successfully");
+
         // Spawn task to handle discovery events
         tokio::spawn(async move {
+            info!("🔄 Starting mDNS event receiver loop...");
             while let Ok(event) = browser.recv_async().await {
+                info!("📡 Received mDNS event, forwarding to handler...");
                 if let Err(e) = tx.send(event).await {
-                    error!("Failed to send discovery event: {}", e);
+                    error!("❌ Failed to send discovery event: {}", e);
                     break;
                 }
             }
+            warn!("🛑 mDNS event receiver loop ended");
         });
 
         // Spawn task to process discovery events
         tokio::spawn(async move {
+            info!("🔄 Starting mDNS event processor loop...");
             while let Some(event) = rx.recv().await {
                 match Self::handle_discovery_event(
                     event,
@@ -206,38 +209,51 @@ impl DiscoveryService {
                 .await
                 {
                     Ok(()) => {}
-                    Err(e) => warn!("Failed to handle discovery event: {}", e),
+                    Err(e) => warn!("⚠️ Failed to handle discovery event: {}", e),
                 }
             }
+            warn!("🛑 mDNS event processor loop ended");
         });
 
+        info!("🎉 Discovery loops started successfully");
         Ok(())
     }
 
-    /// Handle mDNS discovery events
+    /// Handle mDNS discovery events with ENHANCED debugging
     async fn handle_discovery_event(
         event: ServiceEvent,
         peer_manager: &PeerManager,
         discovered_peers: &Arc<RwLock<HashMap<String, DiscoveredPeer>>>,
         our_device_id: &str,
     ) -> Result<()> {
+        info!("📡 mDNS EVENT RECEIVED: {:?}", event);
+
         match event {
             ServiceEvent::ServiceResolved(info) => {
-                debug!("Service resolved: {}", info.get_fullname());
+                info!("🎯 ===== SERVICE RESOLVED =====");
+                info!("   📍 Fullname: {}", info.get_fullname());
+                info!("   🏠 Hostname: {}", info.get_hostname());
+                info!("   🔌 Port: {}", info.get_port());
+                info!("   🌐 Addresses: {:?}", info.get_addresses());
 
-                // Parse TXT record - use a simpler approach
-                let txt_data = Self::parse_txt_properties_simple(&info);
+                // Parse TXT record with enhanced debugging
+                let txt_data = Self::parse_txt_properties_enhanced(&info);
+                info!("   📝 TXT Data: {:?}", txt_data);
 
                 // Extract device ID from TXT record
                 if let Some(device_id) = txt_data.get("device_id") {
+                    info!("🔍 Found device_id: {}", device_id);
+
                     // Don't add ourselves
                     if device_id == our_device_id {
-                        debug!("Ignoring our own service advertisement");
+                        info!("🚫 Ignoring our own service advertisement");
                         return Ok(());
                     }
 
                     // Get first IP address
                     if let Some(&ip_addr) = info.get_addresses().iter().next() {
+                        info!("✅ Creating peer for: {} at {}", device_id, ip_addr);
+
                         let discovered_peer = DiscoveredPeer {
                             name: info.get_hostname().trim_end_matches('.').to_string(),
                             device_id: device_id.clone(),
@@ -249,6 +265,7 @@ impl DiscoveryService {
                         {
                             let mut peers = discovered_peers.write().await;
                             peers.insert(device_id.clone(), discovered_peer.clone());
+                            info!("📝 Stored peer in discovered_peers map");
                         }
 
                         // Convert to Peer and add to peer manager
@@ -260,8 +277,9 @@ impl DiscoveryService {
 
                         // Add peer to peer manager
                         peer_manager.add_peer(peer).await;
+                        info!("📝 Added peer to peer_manager");
 
-                        // 🔥 CRITICAL FIX: Auto-trust discovered peers for testing
+                        // Auto-trust discovered peers for testing
                         info!("🤝 Auto-trusting discovered peer: {}", device_id);
                         if let Err(e) = peer_manager.trust_peer(&device_id).await {
                             warn!("❌ Failed to auto-trust peer {}: {}", device_id, e);
@@ -272,41 +290,94 @@ impl DiscoveryService {
                             );
                         }
 
-                        info!(
-                            "✅ Discovered and trusted new peer: {} ({}) at {}",
-                            info.get_hostname(),
-                            device_id,
-                            ip_addr
-                        );
+                        info!("🎉 ===== DISCOVERY SUCCESS =====");
+                        info!("   📱 Device: {}", discovered_peer.name);
+                        info!("   🆔 ID: {}", device_id);
+                        info!("   🌐 Address: {}", ip_addr);
+                        info!("   🔌 Port: {}", info.get_port());
+                        info!("==============================");
                     } else {
-                        warn!("Service resolved but no IP addresses found");
+                        warn!("❌ Service resolved but no IP addresses found");
+                        info!("   Available addresses: {:?}", info.get_addresses());
                     }
                 } else {
-                    debug!("Service resolved but no device_id in TXT record");
+                    warn!("❌ Service resolved but no device_id in TXT record");
+                    info!(
+                        "   Available TXT keys: {:?}",
+                        txt_data.keys().collect::<Vec<_>>()
+                    );
+                    info!("   Full TXT data: {:?}", txt_data);
                 }
             }
-            ServiceEvent::ServiceRemoved(_, fullname) => {
-                info!("Service removed: {}", fullname);
-                // TODO: Remove peer from discovered peers
+            ServiceEvent::ServiceRemoved(service_type, fullname) => {
+                info!("🚫 Service removed: {} ({})", fullname, service_type);
             }
-            ServiceEvent::ServiceFound(_, fullname) => {
-                debug!(
-                    "Service found: {} - will be resolved automatically",
-                    fullname
+            ServiceEvent::ServiceFound(service_type, fullname) => {
+                info!(
+                    "🔍 Service found: {} ({}) - will resolve automatically",
+                    fullname, service_type
                 );
             }
             ServiceEvent::SearchStarted(service_type) => {
-                debug!("mDNS search started for: {}", service_type);
+                info!("🚀 ===== mDNS SEARCH STARTED =====");
+                info!("   🎯 Service: {}", service_type);
+                info!("   🔍 Looking for Mac devices...");
+                info!("================================");
             }
             ServiceEvent::SearchStopped(service_type) => {
-                debug!("mDNS search stopped for: {}", service_type);
+                warn!("🛑 ===== mDNS SEARCH STOPPED =====");
+                warn!("   ⚠️ Service: {}", service_type);
+                warn!("   🚨 This might indicate a problem!");
+                warn!("================================");
             }
         }
 
         Ok(())
     }
 
-    /// Get local IP address for advertising
+    /// Enhanced TXT properties parsing with better debugging
+    fn parse_txt_properties_enhanced(info: &ServiceInfo) -> HashMap<String, String> {
+        let mut result = HashMap::new();
+        let properties = info.get_properties();
+
+        info!("🔍 Parsing TXT properties:");
+        info!("   📝 Property count: {}", properties.iter().count());
+
+        for property in properties.iter() {
+            let key = property.key();
+            info!("   🔑 Processing key: '{}'", key);
+
+            if let Some(value_bytes) = property.val() {
+                match std::str::from_utf8(value_bytes) {
+                    Ok(value_str) => {
+                        result.insert(key.to_string(), value_str.to_string());
+                        info!("     ✅ {} = '{}'", key, value_str);
+                    }
+                    Err(e) => {
+                        warn!("     ❌ Invalid UTF-8 for key '{}': {}", key, e);
+                    }
+                }
+            } else {
+                result.insert(key.to_string(), "".to_string());
+                info!("     📝 {} = (empty)", key);
+            }
+        }
+
+        // Enhanced fallback with debugging
+        if !result.contains_key("device_id") {
+            let fallback_id = info.get_hostname().trim_end_matches('.').to_string();
+            result.insert("device_id".to_string(), fallback_id.clone());
+            warn!(
+                "⚠️ No device_id found, using hostname as fallback: {}",
+                fallback_id
+            );
+        }
+
+        info!("📋 Final TXT properties: {:?}", result);
+        result
+    }
+
+    /// Enhanced local IP detection with WiFi preference
     async fn get_local_ip(&self) -> Result<IpAddr> {
         let interfaces = get_if_addrs().map_err(|e| {
             SyncError::Network(std::io::Error::other(format!(
@@ -315,71 +386,73 @@ impl DiscoveryService {
             )))
         })?;
 
-        // Look for a non-loopback IPv4 address
-        for iface in interfaces {
-            if let IfAddr::V4(v4_addr) = iface.addr {
+        info!("🔍 All available network interfaces:");
+        for iface in &interfaces {
+            info!("  - {}: {:?}", iface.name, iface.addr);
+        }
+
+        // Priority order for interface selection
+        let preferred_interfaces = ["en0", "eth0", "wlan0", "Wi-Fi"]; // WiFi interfaces first
+        let avoid_interfaces = ["pdp_ip", "cellular", "lo", "utun"]; // Avoid cellular and tunnels
+
+        // First pass: Look for preferred WiFi interfaces
+        for preferred in &preferred_interfaces {
+            for iface in &interfaces {
+                if iface.name.contains(preferred) {
+                    if let IfAddr::V4(ref v4_addr) = iface.addr {
+                        if !v4_addr.is_loopback() && !v4_addr.is_link_local() {
+                            info!(
+                                "✅ Selected preferred WiFi interface: {} ({})",
+                                iface.name, v4_addr.ip
+                            );
+                            return Ok(IpAddr::V4(v4_addr.ip));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: Any non-cellular, non-loopback IPv4 interface
+        for iface in &interfaces {
+            // Skip unwanted interfaces
+            if avoid_interfaces
+                .iter()
+                .any(|avoid| iface.name.contains(avoid))
+            {
+                continue;
+            }
+
+            if let IfAddr::V4(ref v4_addr) = iface.addr {
                 if !v4_addr.is_loopback() && !v4_addr.is_link_local() {
-                    info!("Using network interface: {} ({})", iface.name, v4_addr.ip);
+                    info!(
+                        "✅ Selected fallback interface: {} ({})",
+                        iface.name, v4_addr.ip
+                    );
                     return Ok(IpAddr::V4(v4_addr.ip));
                 }
             }
         }
 
-        // Fallback to localhost if no suitable interface found
-        warn!("No suitable network interface found, using localhost");
-        Ok(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
-    }
+        // Third pass: Try IPv6 if no IPv4 found
+        for iface in &interfaces {
+            if avoid_interfaces
+                .iter()
+                .any(|avoid| iface.name.contains(avoid))
+            {
+                continue;
+            }
 
-    /// Simple TXT properties parsing - extract what we can
-    fn parse_txt_properties_simple(info: &ServiceInfo) -> HashMap<String, String> {
-        let mut result = HashMap::new();
-
-        // Get TXT properties from the service info
-        let properties = info.get_properties();
-
-        // Parse each TXT property using the proper API
-        for property in properties.iter() {
-            let key = property.key();
-
-            // Handle the value - it might be None for key-only properties
-            if let Some(value_bytes) = property.val() {
-                // Convert bytes to string
-                if let Ok(value_str) = std::str::from_utf8(value_bytes) {
-                    result.insert(key.to_string(), value_str.to_string());
-                    debug!("Parsed TXT property: {} = {}", key, value_str);
-                } else {
-                    debug!("TXT property {} has invalid UTF-8 value", key);
+            if let IfAddr::V6(ref v6_addr) = iface.addr {
+                if !v6_addr.is_loopback() {
+                    warn!("⚠️ Using IPv6 interface: {} ({})", iface.name, v6_addr.ip);
+                    return Ok(IpAddr::V6(v6_addr.ip));
                 }
-            } else {
-                // Key-only property (no value)
-                result.insert(key.to_string(), "".to_string());
-                debug!("Parsed TXT property: {} (no value)", key);
             }
         }
 
-        // Add fallback values only if not found
-        if !result.contains_key("device_id") {
-            result.insert(
-                "device_id".to_string(),
-                info.get_hostname().trim_end_matches('.').to_string(),
-            );
-            warn!("No device_id in TXT properties, using hostname as fallback");
-        }
-
-        if !result.contains_key("version") {
-            result.insert("version".to_string(), "unknown".to_string());
-        }
-
-        if !result.contains_key("encryption") {
-            result.insert("encryption".to_string(), "true".to_string());
-        }
-
-        if !result.contains_key("port") {
-            result.insert("port".to_string(), info.get_port().to_string());
-        }
-
-        debug!("Final parsed TXT properties: {:?}", result);
-        result
+        // Fallback to localhost if no suitable interface found
+        error!("❌ No suitable network interface found, using localhost");
+        Ok(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
     }
 
     /// Get all discovered peers

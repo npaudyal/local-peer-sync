@@ -2,7 +2,7 @@
 //  HomeView.swift
 //  LocalPeerSync
 //
-//  Beautiful home screen with status and quick actions
+//  ENHANCED beautiful home screen - FIXED compilation errors
 //
 
 import SwiftUI
@@ -22,7 +22,10 @@ struct HomeView: View {
                     StatusHeroCard()
                     
                     // Quick Actions
-                    QuickActionsCard()
+                    QuickActionsCard(
+                        showingClipboardInput: $showingClipboardInput,
+                        showingQRCode: $showingQRCode
+                    )
                     
                     // Recent Activity
                     if !clipboardManager.recentItems.isEmpty {
@@ -52,6 +55,18 @@ struct HomeView: View {
     private func refreshData() async {
         await syncService.refreshStatus()
         clipboardManager.checkClipboardChanges()
+    }
+    
+    // MARK: - 🔧 FIXED: Debug Info Method
+    private func getDebugInfo() async -> String {
+        var info = ["=== LocalPeerSync Debug Info ==="]
+        info.append("Swift Side:")
+        info.append("  - Running: \(syncService.isRunning)")
+        info.append("  - Local IP: \(syncService.localIPAddress)")
+        info.append("  - Connected Peers: \(syncService.connectedPeers.count)")
+        info.append("  - Discovered Peers: \(syncService.discoveredPeers.count)")
+        
+        return info.joined(separator: "\n")
     }
 }
 
@@ -137,16 +152,11 @@ struct StatusHeroCard: View {
     }
 }
 
-// MARK: - Quick Actions Card
+// MARK: - 🔧 FIXED: Quick Actions Card
 struct QuickActionsCard: View {
     @EnvironmentObject var syncService: SyncService
     @Binding var showingClipboardInput: Bool
     @Binding var showingQRCode: Bool
-    
-    init() {
-        self._showingClipboardInput = .constant(false)
-        self._showingQRCode = .constant(false)
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

@@ -2,14 +2,14 @@
 //  RustBridge.swift
 //  LocalPeerSync
 //
-//  iOS bridge to Rust core library with clipboard integration
+//  ENHANCED iOS bridge to Rust core library with clipboard integration
 //
 
 import Foundation
 import UIKit
 import os.log
 
-// Main sync function declarations (no test functions - those are in RustTestBridge.swift)
+// Main sync function declarations
 @_silgen_name("sync_init")
 func rust_sync_init(_ device_name: UnsafePointer<CChar>) -> OpaquePointer?
 
@@ -46,6 +46,12 @@ func rust_clipboard_content_changed(_ handle: OpaquePointer, _ content: UnsafePo
 @_silgen_name("get_clipboard_history_count")
 func rust_get_clipboard_history_count(_ handle: OpaquePointer) -> Int32
 
+// 🆕 ENHANCED FUNCTIONS
+@_silgen_name("sync_get_health_status")
+func rust_sync_get_health_status(_ handle: OpaquePointer) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("sync_clipboard_enhanced")
+func rust_sync_clipboard_enhanced(_ handle: OpaquePointer, _ content: UnsafePointer<CChar>, _ content_type: Int32, _ source_device: UnsafePointer<CChar>) -> Int32
 
 struct DeviceInfo {
     let id: String
@@ -62,7 +68,7 @@ actor RustBridge {
     }
     
     init?(deviceName: String) async {
-        logger.info("🔧 Initializing iOS RustBridge with clipboard integration...")
+        logger.info("🔧 Initializing ENHANCED iOS RustBridge...")
         
         let result = deviceName.withCString { deviceNamePtr in
             rust_sync_init(deviceNamePtr)
@@ -70,7 +76,12 @@ actor RustBridge {
         
         if let handle = result {
             self._handle = handle
-            logger.info("✅ iOS Rust bridge initialized successfully with clipboard engine")
+            logger.info("✅ ENHANCED iOS Rust bridge initialized successfully")
+            
+            // Test health status
+            if let healthStatus = await getHealthStatus() {
+                logger.info("🏥 Initial health status: \(healthStatus)")
+            }
         } else {
             logger.error("❌ rust_sync_init returned null handle")
             return nil
@@ -78,7 +89,7 @@ actor RustBridge {
     }
     
     func start() async -> Bool {
-        logger.info("▶️ Starting Rust service with clipboard monitoring...")
+        logger.info("▶️ Starting ENHANCED Rust service...")
         
         guard let handle = _handle else {
             logger.error("❌ Cannot start - missing handle")
@@ -88,16 +99,21 @@ actor RustBridge {
         let result = rust_sync_start(handle) == 1
         
         if result {
-            logger.info("✅ Rust service started successfully with clipboard integration")
+            logger.info("✅ ENHANCED Rust service started successfully")
+            
+            // Log health status after start
+            if let healthStatus = await getHealthStatus() {
+                logger.info("🏥 Post-start health status: \(healthStatus)")
+            }
         } else {
-            logger.error("❌ Failed to start Rust service")
+            logger.error("❌ Failed to start ENHANCED Rust service")
         }
         
         return result
     }
     
     func stop() async -> Bool {
-        logger.info("⏹️ Stopping Rust service...")
+        logger.info("⏹️ Stopping ENHANCED Rust service...")
         
         guard let handle = _handle else {
             logger.error("❌ Cannot stop - missing handle")
@@ -107,9 +123,9 @@ actor RustBridge {
         let result = rust_sync_stop(handle) == 1
         
         if result {
-            logger.info("✅ Rust service stopped successfully")
+            logger.info("✅ ENHANCED Rust service stopped successfully")
         } else {
-            logger.error("❌ Failed to stop Rust service")
+            logger.error("❌ Failed to stop ENHANCED Rust service")
         }
         
         return result
@@ -180,7 +196,7 @@ actor RustBridge {
         }
     }
     
-    // MARK: - Clipboard Integration Methods
+    // MARK: - 🆕 ENHANCED CLIPBOARD INTEGRATION
     
     func notifyClipboardChange(content: String, type: ClipboardContentType) async -> Bool {
         guard let handle = _handle else {
@@ -188,16 +204,39 @@ actor RustBridge {
             return false
         }
         
-        logger.info("📋 Notifying Rust of clipboard change: \(content.prefix(50))...")
+        logger.info("📋 Notifying Rust of ENHANCED clipboard change: \(content.prefix(50))...")
         
         let success = content.withCString { contentPtr in
             rust_clipboard_content_changed(handle, contentPtr, type.rawValue) == 1
         }
         
         if success {
-            logger.info("✅ Rust notified of clipboard change successfully")
+            logger.info("✅ Rust notified of ENHANCED clipboard change successfully")
         } else {
-            logger.error("❌ Failed to notify Rust of clipboard change")
+            logger.error("❌ Failed to notify Rust of ENHANCED clipboard change")
+        }
+        
+        return success
+    }
+    
+    func syncClipboardEnhanced(content: String, type: ClipboardContentType, sourceDevice: String = "iOS") async -> Bool {
+        guard let handle = _handle else {
+            logger.error("❌ Cannot sync enhanced clipboard - missing handle")
+            return false
+        }
+        
+        logger.info("📋 ENHANCED clipboard sync: \(content.prefix(50))... from \(sourceDevice)")
+        
+        let success = content.withCString { contentPtr in
+            sourceDevice.withCString { sourcePtr in
+                rust_sync_clipboard_enhanced(handle, contentPtr, type.rawValue, sourcePtr) == 1
+            }
+        }
+        
+        if success {
+            logger.info("✅ ENHANCED clipboard sync successful")
+        } else {
+            logger.error("❌ ENHANCED clipboard sync failed")
         }
         
         return success
@@ -208,8 +247,39 @@ actor RustBridge {
         return Int(rust_get_clipboard_history_count(handle))
     }
     
+    // MARK: - 🆕 HEALTH STATUS
+    
+    func getHealthStatus() async -> String? {
+        guard let handle = _handle else { return nil }
+        
+        guard let statusPtr = rust_sync_get_health_status(handle) else { return nil }
+        
+        let statusString = String(cString: statusPtr)
+        rust_sync_free_string(statusPtr)
+        
+        return statusString
+    }
+    
+    // MARK: - 🆕 DIAGNOSTICS
+    
+    func performDiagnostics() async -> [String: Any] {
+        var diagnostics: [String: Any] = [:]
+        
+        diagnostics["handle_available"] = _handle != nil
+        diagnostics["is_running"] = await isRunning()
+        diagnostics["peer_count"] = await getPeerCount()
+        diagnostics["device_info"] = await getDeviceInfo()
+        
+        if let healthStatus = await getHealthStatus() {
+            diagnostics["health_status"] = healthStatus
+        }
+        
+        logger.info("🔍 Rust diagnostics: \(diagnostics)")
+        return diagnostics
+    }
+    
     deinit {
-        logger.info("🧹 iOS RustBridge deinitializing")
+        logger.info("🧹 ENHANCED iOS RustBridge deinitializing")
         
         if let handle = _handle {
             rust_sync_cleanup(handle)
