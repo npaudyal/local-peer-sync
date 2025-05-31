@@ -186,10 +186,9 @@ impl SyncMessage {
         // Compress if large
         if json.len() > 1024 {
             use base64::{engine::general_purpose, Engine as _};
-            use lz4::block::compress;
+            use lz4_flex::compress_prepend_size;
 
-            let compressed = compress(json.as_bytes(), None, true)
-                .map_err(|e| crate::SyncError::Unknown(format!("Compression failed: {}", e)))?;
+            let compressed = compress_prepend_size(json.as_bytes());
 
             // Only use compression if it actually saves space
             if compressed.len() < json.len() {
@@ -205,13 +204,13 @@ impl SyncMessage {
     pub fn from_json(json: &str) -> crate::Result<Self> {
         if let Some(compressed_data) = json.strip_prefix("COMPRESSED:") {
             use base64::{engine::general_purpose, Engine as _};
-            use lz4::block::decompress;
+            use lz4_flex::decompress_size_prepended;
 
             let compressed_bytes = general_purpose::STANDARD
                 .decode(compressed_data)
                 .map_err(|e| crate::SyncError::Unknown(format!("Base64 decode failed: {}", e)))?;
 
-            let decompressed = decompress(&compressed_bytes, None)
+            let decompressed = decompress_size_prepended(&compressed_bytes)
                 .map_err(|e| crate::SyncError::Unknown(format!("Decompression failed: {}", e)))?;
 
             let json_str = String::from_utf8(decompressed)

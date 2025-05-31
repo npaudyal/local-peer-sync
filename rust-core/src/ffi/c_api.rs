@@ -1,6 +1,7 @@
-//! C API bindings for macOS integration
+//! C API bindings for iOS integration
 
 use crate::{LocalPeerSync, SyncConfig};
+use crate::clipboard::{ClipboardItem, ClipboardContent, ClipboardSyncEngine};
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
@@ -8,10 +9,28 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tracing::{error, info};
 
+/// Simple test function to verify FFI integration
+#[no_mangle]
+pub extern "C" fn test_rust_connection() -> c_int {
+    println!("🦀 Rust test function called successfully!");
+    42
+}
+
+/// Another test with string
+#[no_mangle]
+pub extern "C" fn test_rust_string() -> *mut c_char {
+    let test_string = "Hello from Rust!";
+    match CString::new(test_string) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
 /// Handle to the sync service
 pub struct SyncHandle {
     sync: Arc<LocalPeerSync>,
     runtime: Arc<Runtime>,
+    clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
 }
 
 /// Initialize the sync service
@@ -46,35 +65,39 @@ pub extern "C" fn sync_init(device_name: *const c_char) -> *mut SyncHandle {
             Ok(sync) => {
                 let sync_arc = Arc::new(sync);
 
-                // Create and connect clipboard engine
+                // Create clipboard engine but make it optional for iOS
                 let device_id = uuid::Uuid::new_v4().to_string();
-                match crate::clipboard::ClipboardSyncEngine::new(device_id, 50) {
+                let clipboard_engine = match ClipboardSyncEngine::new(device_id, 50) {
                     Ok(mut clipboard_engine) => {
-                        // Start monitoring clipboard changes
-                        if let Ok(_clipboard_rx) = clipboard_engine.start_monitoring().await {
-                            let clipboard_engine_arc = Arc::new(clipboard_engine);
-
-                            // Connect clipboard engine to sync service
-                            if let Err(e) =
-                                sync_arc.set_clipboard_engine(clipboard_engine_arc).await
-                            {
-                                error!("Failed to connect clipboard engine: {}", e);
-                                return None;
+                        info!("Clipboard engine created successfully");
+                        
+                        // Try to start monitoring, but don't fail if it doesn't work on iOS
+                        match clipboard_engine.start_monitoring().await {
+                            Ok(_clipboard_rx) => {
+                                let clipboard_engine_arc = Arc::new(clipboard_engine);
+                                
+                                // Connect clipboard engine to sync service
+                                if let Err(e) = sync_arc.set_clipboard_engine(clipboard_engine_arc.clone()).await {
+                                    error!("Failed to connect clipboard engine: {}", e);
+                                    None
+                                } else {
+                                    info!("Clipboard engine connected successfully");
+                                    Some(clipboard_engine_arc)
+                                }
                             }
-
-                            info!("Clipboard engine connected successfully");
-                        } else {
-                            error!("Failed to start clipboard monitoring");
-                            return None;
+                            Err(e) => {
+                                info!("Failed to start clipboard monitoring: {}, continuing without it", e);
+                                None
+                            }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to create clipboard engine: {}", e);
-                        return None;
+                        info!("Clipboard engine not available: {}, continuing without it", e);
+                        None
                     }
-                }
+                };
 
-                Some(sync_arc)
+                Some((sync_arc, clipboard_engine))
             }
             Err(e) => {
                 error!("Failed to create LocalPeerSync: {}", e);
@@ -84,8 +107,12 @@ pub extern "C" fn sync_init(device_name: *const c_char) -> *mut SyncHandle {
     });
 
     match sync {
-        Some(sync) => {
-            let handle = SyncHandle { sync, runtime };
+        Some((sync, clipboard_engine)) => {
+            let handle = SyncHandle { 
+                sync, 
+                runtime,
+                clipboard_engine,
+            };
             Box::into_raw(Box::new(handle))
         }
         None => ptr::null_mut(),
@@ -241,6 +268,72 @@ pub extern "C" fn sync_clipboard(handle: *mut SyncHandle, content: *const c_char
     {
         Ok(_) => 1,
         Err(_) => 0,
+    }
+}
+
+/// Notify Rust that iOS clipboard content changed
+#[no_mangle]
+pub extern "C" fn clipboard_content_changed(
+    handle: *mut SyncHandle,
+    content: *const c_char,
+    content_type: c_int,
+) -> c_int {
+    if handle.is_null() || content.is_null() {
+        return 0;
+    }
+
+    let handle = unsafe { &*handle };
+    
+    let content_str = match unsafe { CStr::from_ptr(content) }.to_str() {
+        Ok(content) => content.to_string(),
+        Err(_) => return 0,
+    };
+
+    // Create clipboard item based on type
+    let clipboard_content = match content_type {
+        0 => ClipboardContent::Text { 
+            content: content_str, 
+            encoding: "UTF-8".to_string() 
+        },
+        1 => ClipboardContent::Url { 
+            url: content_str, 
+            title: None, 
+            description: None 
+        },
+        _ => ClipboardContent::Text { 
+            content: content_str, 
+            encoding: "UTF-8".to_string() 
+        },
+    };
+
+    let item = ClipboardItem::new(clipboard_content, "iOS".to_string());
+    
+    // Sync to network
+    handle.runtime.block_on(async {
+        if let Err(e) = handle.sync.sync_clipboard(item.summary()).await {
+            error!("Failed to sync iOS clipboard change: {}", e);
+            0
+        } else {
+            1
+        }
+    })
+}
+
+/// Get clipboard history count
+#[no_mangle]
+pub extern "C" fn get_clipboard_history_count(handle: *mut SyncHandle) -> c_int {
+    if handle.is_null() {
+        return 0;
+    }
+
+    let handle = unsafe { &*handle };
+    
+    if let Some(ref clipboard_engine) = handle.clipboard_engine {
+        handle.runtime.block_on(async {
+            clipboard_engine.get_history().await.len() as c_int
+        })
+    } else {
+        0
     }
 }
 

@@ -111,3 +111,9 @@ impl LocalPeerSync {
         (&self.config.device_id, &self.config.device_name)
     }
 }
+
+pub use ffi::c_api::{
+    sync_cleanup, sync_clipboard, sync_free_string, sync_get_device_id, sync_get_device_name,
+    sync_get_peer_count, sync_get_peers_json, sync_init, sync_is_running, sync_start, sync_stop,
+    test_rust_connection, test_rust_string,
+};

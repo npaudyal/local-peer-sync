@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.localpeersync.ios.sync</string>
+		<string>com.localpeersync.ios.clipboardcheck</string>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict/>
+	</array>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>LocalPeerSync sends notifications when clipboard content is synced between your devices.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+		<string>background-fetch</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

@@ -117,6 +117,66 @@ pub struct ClipboardMetadata {
     pub tags: Vec<String>,
 }
 
+/// Configuration for clipboard engine
+#[derive(Debug, Clone)]
+pub struct ClipboardConfig {
+    /// Enable image synchronization
+    pub sync_images: bool,
+    /// Enable file synchronization
+    pub sync_files: bool,
+    /// Enable rich text synchronization
+    pub sync_rich_text: bool,
+    /// Maximum content size to sync
+    pub max_content_size: usize,
+    /// Enable compression for large content
+    pub enable_compression: bool,
+    /// Compression threshold (bytes)
+    pub compression_threshold: usize,
+    /// Enable clipboard history
+    pub enable_history: bool,
+    /// Auto-paste received content
+    pub auto_paste: bool,
+}
+
+/// Statistics tracking
+#[derive(Debug)]
+pub struct ClipboardStats {
+    pub items_synced: u64,
+    pub bytes_synced: u64,
+    pub images_synced: u64,
+    pub files_synced: u64,
+    pub errors: u64,
+    pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl Default for ClipboardStats {
+    fn default() -> Self {
+        Self {
+            items_synced: 0,
+            bytes_synced: 0,
+            images_synced: 0,
+            files_synced: 0,
+            errors: 0,
+            last_sync: None,
+        }
+    }
+}
+
+impl Default for ClipboardConfig {
+    fn default() -> Self {
+        Self {
+            sync_images: true,
+            sync_files: true,
+            sync_rich_text: true,
+            max_content_size: 10 * 1024 * 1024, // 10MB
+            enable_compression: true,
+            compression_threshold: 1024, // 1KB
+            enable_history: true,
+            auto_paste: true,
+        }
+    }
+}
+
 impl ClipboardItem {
     /// Create a new clipboard item
     pub fn new(content: ClipboardContent, source_device: String) -> Self {
