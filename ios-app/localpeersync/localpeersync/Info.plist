@@ -11,10 +11,187 @@
 	<array>
 		<dict/>
 	</array>
+	<key>LocalPeerSync iOS - Background Ready Edition
+🧪 Testing Rust integration...
+🦀 Rust test function called successfully!
+✅ Rust integration test PASSED!
+✅ Rust string test PASSED!
+❌ Failed to register background task
+🔔 Requesting notification permissions
+🌐 Background URL session configured
+❌ Failed to register background task
+...requesting item failed with error: Error Domain=PBErrorDomain Code=13 "Operation not authorized." UserInfo={NSLocalizedDescription=Operation not authorized.}
+📋 Clipboard manager initialized with background support
+🚀 Starting services with background support...
+🔔 Requesting notification permissions
+🌐 Network connected via: WiFi
+🚀 Starting LocalPeerSync with background support...
+🔧 Initializing ENHANCED iOS RustBridge...
+[2m2025-06-03T01:18:42.837595Z[0m [32m INFO[0m Initializing Local Peer Sync v0.1.0
+[2m2025-06-03T01:18:42.837689Z[0m [32m INFO[0m 🎯 Initialized world-class clipboard engine for device: 458e4565-5d20-4426-acfe-a7377a0b532e on platform
+[2m2025-06-03T01:18:42.837692Z[0m [32m INFO[0m Clipboard engine created successfully
+[2m2025-06-03T01:18:42.837770Z[0m [32m INFO[0m 🚀 Started intelligent clipboard monitoring
+[2m2025-06-03T01:18:42.837775Z[0m [32m INFO[0m 📋 Connected clipboard engine to network server
+[2m2025-06-03T01:18:42.837794Z[0m [32m INFO[0m Clipboard engine connected successfully
+✅ ENHANCED iOS Rust bridge initialized successfully
+🏥 Initial health status: {"peer_count":0,"platform":"ios","rust_mdns_enabled":false,"tcp_server_running":true}
+[2m2025-06-03T01:18:42.837966Z[0m [32m INFO[0m 🔍 Starting intelligent clipboard monitoring loop
+📱 App became active - refreshing clipboard state
+✅ Rust bridge initialized with background support
+▶️ Starting ENHANCED Rust service...
+[2m2025-06-03T01:18:42.841170Z[0m [32m INFO[0m Starting Local Peer Sync service
+[2m2025-06-03T01:18:42.841174Z[0m [32m INFO[0m 🚀 Starting peer discovery on port 8421
+[2m2025-06-03T01:18:42.841266Z[0m [32m INFO[0m TCP server listening on 0.0.0.0:8421
+[2m2025-06-03T01:18:42.841278Z[0m [32m INFO[0m ✅ TCP server started successfully on port 8421
+[2m2025-06-03T01:18:42.841280Z[0m [32m INFO[0m 📱 Skipping Rust mDNS on iOS - using native iOS discovery
+[2m2025-06-03T01:18:42.841282Z[0m [32m INFO[0m    ℹ️  iOS will handle mDNS through NetService
+[2m2025-06-03T01:18:42.841284Z[0m [32m INFO[0m    ℹ️  TCP server is running and ready for connections
+[2m2025-06-03T01:18:42.841286Z[0m [32m INFO[0m 🎉 Network discovery startup completed
+[2m2025-06-03T01:18:42.841288Z[0m [32m INFO[0m Local Peer Sync service started successfully
+[2m2025-06-03T01:18:42.841290Z[0m [32m INFO[0m Sync service started successfully
+✅ ENHANCED Rust service started successfully
+🏥 Post-start health status: {"peer_count":0,"platform":"ios","rust_mdns_enabled":false,"tcp_server_running":true}
+[2m2025-06-03T01:18:42.841326Z[0m [32m INFO[0m 🚀 TCP server accept loop started, waiting for connections...
+✅ Notification permissions: true
+✅ Notification permissions: true
+✅ TCP server started on port 8421 with background support
+🔍 Starting robust multi-method discovery with background support...
+🚀 Starting multi-method discovery with background support...
+📡 Started advertising: iPhone
+🔍 Starting mDNS discovery...
+✅ Multi-method discovery started
+✅ Robust discovery started with background support
+✅ All services started successfully with background support
+🔍 Starting clipboard monitoring with background support
+...requesting item failed with error: Error Domain=PBErrorDomain Code=13 "Operation not authorized." UserInfo={NSLocalizedDescription=Operation not authorized.}
+✅ Clipboard monitoring started
+App is being debugged, do not track this hang
+Hang detected: 0.30s (debugger attached, not reporting)
+&lt;0x103a01680&gt; Gesture: System gesture gate timed out.
+App is being debugged, do not track this hang
+Hang detected: 1.93s (debugger attached, not reporting)
+🔍 Starting background-aware network scanner...
+🔍 Performing background-aware network scan...
+🔍 Scanning network range: 192.168.6
+🔍 Starting comprehensive device scan...
+🔍 Performing full network scan...
+🛑 mDNS discovery stopped
+🔍 Performing background-aware network scan...
+🔍 Scanning network range: 192.168.6
+nw_path_evaluator_create_flow_inner failed NECP_CLIENT_ACTION_ADD_FLOW (null) evaluator parameters: tcp, attribution: developer, context: Default Network Context (private), proc: 166727A4-9D33-3FE4-AAAE-135A7FF2CDC6
+nw_path_evaluator_create_flow_inner NECP_CLIENT_ACTION_ADD_FLOW 90814070-B3A7-483E-8404-6296047AAEA8 [64: Host is down]
+nw_endpoint_flow_setup_channel [C6 192.168.6.2:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] failed to request add nexus flow
+nw_endpoint_flow_failed_with_error [C6 192.168.6.2:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_path_evaluator_create_flow_inner failed NECP_CLIENT_ACTION_ADD_FLOW (null) evaluator parameters: tcp, attribution: developer, context: Default Network Context (private), proc: 166727A4-9D33-3FE4-AAAE-135A7FF2CDC6
+nw_path_evaluator_create_flow_inner NECP_CLIENT_ACTION_ADD_FLOW B7011E27-D69C-4D5D-A792-9F49560DC033 [64: Host is down]
+nw_endpoint_flow_setup_channel [C8 192.168.6.3:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] failed to request add nexus flow
+nw_endpoint_flow_failed_with_error [C8 192.168.6.3:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_path_evaluator_create_flow_inner failed NECP_CLIENT_ACTION_ADD_FLOW (null) evaluator parameters: tcp, attribution: developer, context: Default Network Context (private), proc: 166727A4-9D33-3FE4-AAAE-135A7FF2CDC6
+nw_path_evaluator_create_flow_inner NECP_CLIENT_ACTION_ADD_FLOW 60C31EB2-0B69-4506-8750-D5D3BC27B412 [64: Host is down]
+nw_endpoint_flow_setup_channel [C9 192.168.6.5:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] failed to request add nexus flow
+nw_endpoint_flow_failed_with_error [C9 192.168.6.5:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_path_evaluator_create_flow_inner failed NECP_CLIENT_ACTION_ADD_FLOW (null) evaluator parameters: tcp, attribution: developer, context: Default Network Context (private), proc: 166727A4-9D33-3FE4-AAAE-135A7FF2CDC6
+nw_path_evaluator_create_flow_inner NECP_CLIENT_ACTION_ADD_FLOW 6E0A2C3E-55E0-4B25-B80A-1AE5AF3AB3C8 [64: Host is down]
+nw_endpoint_flow_setup_channel [C10 192.168.6.4:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] failed to request add nexus flow
+nw_endpoint_flow_failed_with_error [C10 192.168.6.4:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_path_evaluator_create_flow_inner failed NECP_CLIENT_ACTION_ADD_FLOW (null) evaluator parameters: tcp, attribution: developer, context: Default Network Context (private), proc: 166727A4-9D33-3FE4-AAAE-135A7FF2CDC6
+nw_path_evaluator_create_flow_inner NECP_CLIENT_ACTION_ADD_FLOW 4ECEE4E8-477D-4309-B038-FBA28725B486 [64: Host is down]
+nw_endpoint_flow_setup_channel [C7 192.168.6.1:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] failed to request add nexus flow
+nw_endpoint_flow_failed_with_error [C7 192.168.6.1:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+🔍 Starting mDNS discovery...
+🔍 Found mDNS service: Ultimate-Win-43159
+🎯 Discovered peer: Ultimate-Win-43159 at 0.0.0.0
+✅ Added peer: Ultimate-Win-43159
+🌉 BRIDGE: Adding discovered peer to Rust: Ultimate-Win-43159 (Ultimate-Win-43159) at 0.0.0.0:-1
+[2m2025-06-03T01:18:57.168320Z[0m [32m INFO[0m 🌉 BRIDGE: Adding iOS-discovered peer: Ultimate-Win-43159 (Ultimate-Win-43159) at 0.0.0.0:-1
+[2m2025-06-03T01:18:57.168349Z[0m [32m INFO[0m 📝 Adding peer to Rust PeerManager: Ultimate-Win-43159 (Ultimate-Win-43159) at 0.0.0.0:65535
+[2m2025-06-03T01:18:57.168356Z[0m [32m INFO[0m 📱 Added new peer: Ultimate-Win-43159 (Ultimate-Win-43159) at 0.0.0.0:65535
+[2m2025-06-03T01:18:57.168362Z[0m [32m INFO[0m 🤝 Peer Ultimate-Win-43159 (Ultimate-Win-43159) is now trusted
+[2m2025-06-03T01:18:57.168366Z[0m [32m INFO[0m ✅ iOS-discovered peer trusted: Ultimate-Win-43159
+[2m2025-06-03T01:18:57.168370Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:18:57.168373Z[0m [32m INFO[0m 🔍 Rust now has 1 trusted peers
+✅ Successfully bridged peer to Rust: Ultimate-Win-43159
+[2m2025-06-03T01:18:57.168432Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:18:57.168435Z[0m [32m INFO[0m 🔍 DEBUG: Trusted peer count: 1
+[2m2025-06-03T01:18:57.168438Z[0m [32m INFO[0m   📱 Trusted peer: Ultimate-Win-43159 at 0.0.0.0:65535
+🔍 Rust now has 1 trusted peers
+✅ Bridged peer to Rust: Ultimate-Win-43159
+📋 Setting clipboard content from manual: Test sync at 6/2/2025, 9:19 PM...
+✅ Clipboard content set successfully
+📤 Manually syncing current clipboard content
+📋 Syncing clipboard with background support: Test sync at 6/2/2025, 9:19 PM...
+✅ Background network task started: 2
+📋 Notifying Rust of ENHANCED clipboard change: Test sync at 6/2/2025, 9:19 PM...
+[2m2025-06-03T01:19:02.618756Z[0m [32m INFO[0m 📋 iOS clipboard changed: 32 chars, type: 0
+[2m2025-06-03T01:19:02.618926Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:19:02.618933Z[0m [32m INFO[0m 📊 Before sync - Trusted peers: 1
+✅ Background task started: 3
+[2m2025-06-03T01:19:02.618936Z[0m [32m INFO[0m   📱 Peer: Ultimate-Win-43159 at 0.0.0.0:65535
+[2m2025-06-03T01:19:02.618988Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:19:02.618997Z[0m [32m INFO[0m 📤 Starting broadcast to 1 trusted peers
+[2m2025-06-03T01:19:02.619036Z[0m [32m INFO[0m 📨 Attempting to send to peer: Ultimate-Win-43159 (0.0.0.0:65535)
+[2m2025-06-03T01:19:02.619039Z[0m [32m INFO[0m 🔄 Attempting to send message to peer: Ultimate-Win-43159 at 0.0.0.0:65535
+[2m2025-06-03T01:19:02.619042Z[0m [32m INFO[0m 🔌 Connecting to 0.0.0.0:65535...
+[2m2025-06-03T01:19:02.619554Z[0m [31mERROR[0m ❌ Failed to connect to 0.0.0.0:65535: Connection refused (os error 61)
+[2m2025-06-03T01:19:02.619595Z[0m [31mERROR[0m ❌ Failed to send message to Ultimate-Win-43159: Network error: Connection refused (os error 61)
+[2m2025-06-03T01:19:02.619599Z[0m [31mERROR[0m 💥 Broadcast failed: 0/1 peers reached (errors: 1)
+[2m2025-06-03T01:19:02.619604Z[0m [31mERROR[0m ❌ Failed to sync iOS clipboard change: Network error: Failed to reach any of 1 peers
+❌ Failed to notify Rust of ENHANCED clipboard change
+❌ Clipboard sync failed
+❌ Manual sync failed
+🛑 Ending background task: 3
+📋 Setting clipboard content from manual: Test sync at 6/2/2025, 9:19 PM...
+✅ Clipboard content set successfully
+📤 Manually syncing current clipboard content
+📋 Syncing clipboard with background support: Test sync at 6/2/2025, 9:19 PM...
+🛑 Ending background network task: 2
+✅ Background network task started: 4
+📋 Notifying Rust of ENHANCED clipboard change: Test sync at 6/2/2025, 9:19 PM...
+[2m2025-06-03T01:19:05.931510Z[0m [32m INFO[0m 📋 iOS clipboard changed: 32 chars, type: 0
+[2m2025-06-03T01:19:05.931563Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:19:05.931570Z[0m [32m INFO[0m 📊 Before sync - Trusted peers: 1
+[2m2025-06-03T01:19:05.931573Z[0m [32m INFO[0m   📱 Peer: Ultimate-Win-43159 at 0.0.0.0:65535
+[2m2025-06-03T01:19:05.931581Z[0m [32m INFO[0m 🔍 Found 1 trusted peers out of 1 total peers
+[2m2025-06-03T01:19:05.931585Z[0m [32m INFO[0m 📤 Starting broadcast to 1 trusted peers
+[2m2025-06-03T01:19:05.931596Z[0m [32m INFO[0m 📨 Attempting to send to peer: Ultimate-Win-43159 (0.0.0.0:65535)
+[2m2025-06-03T01:19:05.931626Z[0m [32m INFO[0m 🔄 Attempting to send message to peer: Ultimate-Win-43159 at 0.0.0.0:65535
+[2m2025-06-03T01:19:05.931631Z[0m [32m INFO[0m 🔌 Connecting to 0.0.0.0:65535...
+✅ Background task started: 5
+[2m2025-06-03T01:19:05.932104Z[0m [31mERROR[0m ❌ Failed to connect to 0.0.0.0:65535: Connection refused (os error 61)
+[2m2025-06-03T01:19:05.932120Z[0m [31mERROR[0m ❌ Failed to send message to Ultimate-Win-43159: Network error: Connection refused (os error 61)
+[2m2025-06-03T01:19:05.932126Z[0m [31mERROR[0m 💥 Broadcast failed: 0/1 peers reached (errors: 1)
+[2m2025-06-03T01:19:05.932131Z[0m [31mERROR[0m ❌ Failed to sync iOS clipboard change: Network error: Failed to reach any of 1 peers
+❌ Failed to notify Rust of ENHANCED clipboard change
+❌ Clipboard sync failed
+❌ Manual sync failed
+🛑 Ending background task: 5
+🔍 Performing background-aware network scan...
+🔍 Scanning network range: 192.168.6
+Background Task 4 ("LocalPeerSyncNetwork"), was created over 30 seconds ago. In applications running in the background, this creates a risk of termination. Remember to call UIApplication.endBackgroundTask(_:) for your task in a timely manner to avoid this.
+🌐 Network connected via: WiFi
+🔍 Performing background-aware network scan...
+🔍 Scanning network range: 192.168.6
+nw_endpoint_flow_failed_with_error [C5 192.168.6.4:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_endpoint_flow_failed_with_error [C4 192.168.6.3:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_endpoint_flow_failed_with_error [C3 192.168.6.2:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_endpoint_flow_failed_with_error [C2 192.168.6.1:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+nw_endpoint_flow_failed_with_error [C1 192.168.6.5:8421 in_progress channel-flow (satisfied (Path is satisfied), viable, interface: en0[802.11], ipv4, ipv6, dns, uses wifi)] already failing, returning
+
+</key>
+	<string></string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_localpeersync._tcp</string>
 	</array>
+	<key>NSPasteboardUsageDescription</key>
+	<string>LocalPeerSync needs clipboard access to sync clipboard content between your devices.</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>LocalPeerSync sends notifications when clipboard content is synced between your devices.</string>
 	<key>UIBackgroundModes</key>

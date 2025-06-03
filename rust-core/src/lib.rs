@@ -110,10 +110,33 @@ impl LocalPeerSync {
     pub fn get_device_info(&self) -> (&str, &str) {
         (&self.config.device_id, &self.config.device_name)
     }
+
+    /// Get manager for peer operations
+    pub async fn get_manager(&self) -> Arc<RwLock<SyncManager>> {
+        Arc::clone(&self.manager)
+    }
 }
 
+// 🆕 COMPLETE: Export ALL FFI functions including new peer bridging functions
 pub use ffi::c_api::{
-    sync_cleanup, sync_clipboard, sync_free_string, sync_get_device_id, sync_get_device_name,
-    sync_get_peer_count, sync_get_peers_json, sync_init, sync_is_running, sync_start, sync_stop,
-    test_rust_connection, test_rust_string,
+    clipboard_content_changed,
+    get_clipboard_history_count,
+    sync_add_discovered_peer, // 🆕 NEW
+    sync_cleanup,
+    sync_clipboard,
+    sync_clipboard_enhanced,
+    sync_free_string,
+    sync_get_device_id,
+    sync_get_device_name,
+    sync_get_health_status,
+    sync_get_peer_count,
+    sync_get_peers_json,
+    sync_get_trusted_peer_count, // 🆕 NEW
+    sync_init,
+    sync_is_running,
+    sync_remove_peer, // 🆕 NEW
+    sync_start,
+    sync_stop,
+    test_rust_connection,
+    test_rust_string,
 };

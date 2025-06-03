@@ -1,16 +1,13 @@
-
-//  SyncService.swift
-//  LocalPeerSync
 //
-//  iOS-optimized sync service with native advertising and discovery
+//  SyncService.swift
+//  LocalPeerSync - Background Ready Production (COMPLETE)
 //
 
 import Foundation
-import Combine
 import Network
 import UIKit
 import os.log
-import SystemConfiguration
+import BackgroundTasks
 
 @MainActor
 class SyncService: ObservableObject {
@@ -20,600 +17,306 @@ class SyncService: ObservableObject {
     @Published var isRunning: Bool = false
     @Published var connectedPeers: [PeerDevice] = []
     @Published var discoveredPeers: [PeerDevice] = []
-    @Published var trustedDevices: [PeerDevice] = []
-    @Published var deviceName: String = ""
-    @Published var deviceId: String = ""
-    @Published var deviceModel: String = ""
-    @Published var localIPAddress: String = ""
-    @Published var currentNetworkName: String = ""
-    @Published var port: Int = 8421
-    @Published var statusDescription: String = "Initializing..."
-    @Published var isDiscovering: Bool = false
-    @Published var lastSyncTime: Date?
-    @Published var syncCount: Int = 0
-    @Published var errorCount: Int = 0
+    @Published var statusMessage: String = "Ready"
+    @Published var discoveryMethod: String = "Initializing..."
+    @Published var backgroundOperationsCount: Int = 0
     
     // MARK: - Private Properties
     private var rustBridge: RustBridge?
-    private var networkMonitor: NWPathMonitor?
-    private var statusUpdateTimer: Timer?
-    private var discoveryTimer: Timer?
     private let logger = Logger(subsystem: "com.localpeersync.ios", category: "SyncService")
-    private var isInitialized = false
-    private var cancellables = Set<AnyCancellable>()
     
-    // MARK: - iOS Native mDNS Properties
-    private var nativeAdvertiser: NetService?
-    private var nativeDiscoveryBrowser: NetServiceBrowser?
-    private var nativeDiscoveryDelegate: NativeDiscoveryDelegate?
-    private var nativeAdvertiserDelegate: NativeAdvertiserDelegate?
-    private var discoveredServices: [String: NetService] = [:]
+    // Device Info
+    private let deviceName = UIDevice.current.name
+    private let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+    private let port = 8421
     
-    // MARK: - Initialization
+    // Background Support
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundSession: URLSession?
+    
+    // Discovery
+    private var discoveryManager: MultiMethodDiscoveryManager?
+    private var networkMonitor: NWPathMonitor?
+    private var currentNetworkInterface: String = ""
+    
     private init() {
-        setupDeviceInfo()
         setupNetworkMonitoring()
+        setupBackgroundSession()
+        setupBackgroundObservers()
+        registerBackgroundTasks()
+    }
+    
+    // MARK: - Background Setup
+    
+    private func setupBackgroundSession() {
+        let config = URLSessionConfiguration.background(withIdentifier: "com.localpeersync.background")
+        config.sessionSendsLaunchEvents = true
+        config.isDiscretionary = false
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        
+        backgroundSession = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
+        logger.info("🌐 Background URL session configured")
+    }
+    
+    private func setupBackgroundObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+    
+    private func registerBackgroundTasks() {
+        let result = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: "com.localpeersync.sync",
+            using: nil
+        ) { task in
+            self.handleBackgroundSync(task: task as! BGAppRefreshTask)
+        }
+        
+        if result {
+            logger.info("✅ Background task registered successfully")
+        } else {
+            logger.error("❌ Failed to register background task")
+        }
+    }
+    
+    @objc private func appDidEnterBackground() {
+        logger.info("📱 App entering background - preparing for background operation")
+        startBackgroundTask()
+        scheduleBackgroundRefresh()
+    }
+    
+    @objc private func appWillEnterForeground() {
+        logger.info("📱 App entering foreground - resuming full operation")
+        endBackgroundTask()
+    }
+    
+    private func startBackgroundTask() {
+        endBackgroundTask()
+        
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "LocalPeerSyncNetwork") { [weak self] in
+            self?.logger.warning("⏰ Background network task expiring")
+            self?.endBackgroundTask()
+        }
+        
+        if backgroundTask != .invalid {
+            logger.info("✅ Background network task started: \(self.backgroundTask.rawValue)")
+        }
+    }
+    
+    private func endBackgroundTask() {
+        if backgroundTask != .invalid {
+            logger.info("🛑 Ending background network task: \(self.backgroundTask.rawValue)")
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+    }
+    
+    private func scheduleBackgroundRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: "com.localpeersync.sync")
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes from now
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("✅ Background refresh scheduled")
+        } catch {
+            logger.error("❌ Failed to schedule background refresh: \(error)")
+        }
+    }
+    
+    private func handleBackgroundSync(task: BGAppRefreshTask) {
+        logger.info("🔄 Handling background sync task")
+        
+        task.expirationHandler = {
+            self.logger.warning("⏰ Background sync task expired")
+            task.setTaskCompleted(success: false)
+        }
+        
+        Task {
+            // Perform quick sync check
+            await self.performBackgroundSync()
+            
+            // Schedule next background refresh
+            self.scheduleBackgroundRefresh()
+            
+            task.setTaskCompleted(success: true)
+            self.logger.info("✅ Background sync completed")
+        }
+    }
+    
+    func performBackgroundSync() async {
+        guard isRunning else { return }
+        
+        logger.info("🔄 Performing background sync check")
+        
+        // Quick peer health check
+        await refreshStatus()
+        
+        // Increment background operations counter
+        backgroundOperationsCount += 1
     }
     
     // MARK: - Public Methods
-    func initialize() async {
-        logger.info("🚀 Initializing SyncService...")
+    
+    func startSync() async {
+        logger.info("🚀 Starting LocalPeerSync with background support...")
         
         do {
             try await initializeRustBridge()
-            await startStatusUpdates()
-            isInitialized = true
-            statusDescription = "Ready"
-            logger.info("✅ SyncService initialized successfully")
+            try await startTcpServer()
+            try await startRobustDiscovery()
+            
+            isRunning = true
+            statusMessage = "Active - \(connectedPeers.count) devices"
+            
+            logger.info("✅ All services started successfully with background support")
+            
         } catch {
-            logger.error("❌ Failed to initialize SyncService: \(error)")
-            statusDescription = "Failed to initialize"
+            logger.error("❌ Failed to start services: \(error)")
+            statusMessage = "Failed to start: \(error.localizedDescription)"
+            isRunning = false
         }
-    }
-    
-    func notifyClipboardChange(content: String, type: ClipboardContentType) async -> Bool {
-        guard let bridge = rustBridge, isRunning else {
-            logger.info("📋 Skipping clipboard notification - service not ready")
-            return false
-        }
-        
-        guard let handle = await bridge.handle else {
-            logger.error("❌ Cannot notify clipboard change - missing handle")
-            return false
-        }
-        
-        let success = await bridge.notifyClipboardChange(content: content, type: type)
-        
-        if success {
-            logger.info("📋 Successfully notified Rust of clipboard change")
-        } else {
-            logger.error("❌ Failed to notify Rust of clipboard change")
-        }
-        return success
-    }
-    
-    func getClipboardHistoryCount() async -> Int {
-        guard let bridge = rustBridge else { return 0 }
-        return await bridge.getClipboardHistoryCount()
-    }
-    
-    func toggleSync() {
-        if isRunning {
-            stopSync()
-        } else {
-            startSync()
-        }
-    }
-    
-    // MARK: - iOS Native Advertising
-    private func startNativeAdvertising() {
-        logger.info("🎯 ===== STARTING NATIVE iOS ADVERTISING =====")
-        
-        // Stop any existing advertising
-        nativeAdvertiser?.stop()
-        
-        // Create TXT record data
-        let txtData = createTXTRecord()
-        
-        // Create NetService for advertising
-        nativeAdvertiser = NetService(
-            domain: "local.",
-            type: "_localpeersync._tcp.",
-            name: deviceName,
-            port: Int32(port)
-        )
-        
-        nativeAdvertiserDelegate = NativeAdvertiserDelegate()
-        nativeAdvertiser?.delegate = nativeAdvertiserDelegate
-        
-        // Set TXT record
-        nativeAdvertiser?.setTXTRecord(txtData)
-        
-        logger.info("📝 Advertising details:")
-        logger.info("   📱 Name: \(self.deviceName)")
-        logger.info("   🔌 Port: \(self.port)")
-        logger.info("   🆔 Device ID: \(self.deviceId)")
-        logger.info("   🌐 Local IP: \(self.localIPAddress)")
-        
-        // Start advertising
-        nativeAdvertiser?.publish()
-        
-        logger.info("✅ Native iOS advertising started")
-    }
-    
-    private func stopNativeAdvertising() {
-        logger.info("🛑 Stopping native iOS advertising")
-        nativeAdvertiser?.stop()
-        nativeAdvertiser = nil
-        nativeAdvertiserDelegate = nil
-    }
-    
-    private func createTXTRecord() -> Data {
-        let txtDict: [String: Data] = [
-            "device_id": deviceId.data(using: .utf8) ?? Data(),
-            "version": "0.1.0".data(using: .utf8) ?? Data(),
-            "encryption": "true".data(using: .utf8) ?? Data(),
-            "port": "\(port)".data(using: .utf8) ?? Data(),
-            "platform": "iOS".data(using: .utf8) ?? Data()
-        ]
-        
-        return NetService.data(fromTXTRecord: txtDict)
-    }
-    
-    // MARK: - iOS Native Discovery
-    private func startNativeDiscovery() {
-        logger.info("🎯 ===== STARTING NATIVE iOS DISCOVERY =====")
-        
-        // Stop any existing discovery
-        nativeDiscoveryBrowser?.stop()
-        
-        // Create new browser and delegate
-        nativeDiscoveryBrowser = NetServiceBrowser()
-        nativeDiscoveryDelegate = NativeDiscoveryDelegate { [weak self] service in
-            self?.handleDiscoveredService(service)
-        }
-        
-        nativeDiscoveryBrowser?.delegate = nativeDiscoveryDelegate
-        
-        logger.info("🔍 Starting iOS NetServiceBrowser for _localpeersync._tcp.")
-        nativeDiscoveryBrowser?.searchForServices(ofType: "_localpeersync._tcp.", inDomain: "local.")
-        
-        logger.info("✅ Native iOS discovery started")
-    }
-    
-    private func stopNativeDiscovery() {
-        logger.info("🛑 Stopping native iOS discovery")
-        nativeDiscoveryBrowser?.stop()
-        nativeDiscoveryBrowser = nil
-        nativeDiscoveryDelegate = nil
-        discoveredServices.removeAll()
-    }
-    
-    private func handleDiscoveredService(_ service: NetService) {
-        logger.info("🎯 ===== DISCOVERED SERVICE =====")
-        logger.info("   📱 Name: \(service.name)")
-        logger.info("   🔧 Type: \(service.type)")
-        logger.info("   🌐 Domain: \(service.domain)")
-        
-        // Ignore our own service
-        if service.name == deviceName {
-            logger.info("🚫 Ignoring our own service")
-            return
-        }
-        
-        // Store the service
-        discoveredServices[service.name] = service
-        
-        // Resolve the service to get details
-        service.delegate = nativeDiscoveryDelegate
-        service.resolve(withTimeout: 10.0)
-    }
-    
-    func handleResolvedService(_ service: NetService) {
-        logger.info("✅ ===== RESOLVED SERVICE =====")
-        logger.info("   📱 Name: \(service.name)")
-        logger.info("   🏠 Host: \(service.hostName ?? "Unknown")")
-        logger.info("   🔌 Port: \(service.port)")
-        
-        // Parse TXT record
-        let txtData = parseTXTRecord(service.txtRecordData())
-        logger.info("   📝 TXT Data: \(txtData)")
-        
-        guard let deviceIdFromTxt = txtData["device_id"] else {
-            logger.warning("⚠️ No device_id in TXT record, using service name")
-            return
-        }
-        
-        // Don't add our own device
-        if deviceIdFromTxt == deviceId {
-            logger.info("🚫 Ignoring our own device by ID")
-            return
-        }
-        
-        guard let hostName = service.hostName else {
-            logger.warning("⚠️ No hostname resolved")
-            return
-        }
-        
-        // Extract IP from hostname (remove .local suffix)
-        let cleanHostName = hostName.replacingOccurrences(of: ".local.", with: "")
-        
-        // Create peer device
-        let peerDevice = PeerDevice(
-            id: deviceIdFromTxt,
-            name: service.name,
-            model: txtData["platform"] ?? "Unknown Device",
-            deviceType: deviceTypeFromName(service.name),
-            ipAddress: cleanHostName,
-            port: service.port,
-            connectionStatus: .discovered,
-            isConnected: false,
-            isTrusted: false,
-            lastSeen: Date(),
-            syncCount: 0
-        )
-        
-        // Add to discovered peers
-        if !self.discoveredPeers.contains(where: { $0.id == deviceIdFromTxt }) {
-            self.discoveredPeers.append(peerDevice)
-            logger.info("📱 Added peer to discoveredPeers: \(service.name)")
-        }
-        
-        // AUTO-CONNECT for testing
-        Task {
-            await autoConnectToPeer(peerDevice)
-        }
-        
-        logger.info("🎉 Successfully processed discovered service: \(service.name)")
-        logger.info("==============================")
-    }
-    
-    private func deviceTypeFromName(_ name: String) -> DeviceType {
-        let lowercaseName = name.lowercased()
-        if lowercaseName.contains("mac") {
-            return .mac
-        } else if lowercaseName.contains("win") {
-            return .windows
-        } else if lowercaseName.contains("iphone") {
-            return .iPhone
-        } else if lowercaseName.contains("ipad") {
-            return .iPad
-        } else {
-            return .unknown
-        }
-    }
-    
-    private func autoConnectToPeer(_ peer: PeerDevice) async {
-        logger.info("🤝 AUTO-CONNECTING to peer: \(peer.name)")
-        
-        // Add to trusted devices
-        var trustedPeer = peer
-        trustedPeer.connectionStatus = .connected
-        trustedPeer.isConnected = true
-        trustedPeer.isTrusted = true
-        
-        if !self.trustedDevices.contains(where: { $0.id == peer.id }) {
-            self.trustedDevices.append(trustedPeer)
-        }
-        
-        if !self.connectedPeers.contains(where: { $0.id == peer.id }) {
-            self.connectedPeers.append(trustedPeer)
-        }
-        
-        // Remove from discovered
-        self.discoveredPeers.removeAll { $0.id == peer.id }
-        
-        logger.info("✅ Auto-connected to peer: \(peer.name)")
-    }
-    
-    private func parseTXTRecord(_ data: Data?) -> [String: String] {
-        guard let data = data else { return [:] }
-        
-        let txtDict = NetService.dictionary(fromTXTRecord: data)
-        var result: [String: String] = [:]
-        
-        for (key, value) in txtDict {
-            if let stringValue = String(data: value, encoding: .utf8) {
-                result[key] = stringValue
-            }
-        }
-        
-        return result
-    }
-    
-    // MARK: - Network Validation
-    private func validateNetworkForDiscovery() -> Bool {
-        guard let currentIP = getLocalIPAddress() else {
-            logger.warning("⚠️ No local IP address available")
-            return false
-        }
-        
-        let isValidPrivateIP = currentIP.hasPrefix("192.168.") ||
-                              (currentIP.hasPrefix("10.") && !currentIP.hasPrefix("10.18.")) ||
-                              currentIP.hasPrefix("172.1") ||
-                              currentIP.hasPrefix("172.2") ||
-                              currentIP.hasPrefix("172.3")
-        
-        let likelyCellular = currentIP.hasPrefix("10.18.") ||
-                           currentIP.hasPrefix("10.19.") ||
-                           currentIP.contains("pdp")
-        
-        logger.info("🌐 Network validation:")
-        logger.info("   - Current IP: \(currentIP)")
-        logger.info("   - Valid private network: \(isValidPrivateIP)")
-        logger.info("   - Likely cellular: \(likelyCellular)")
-        
-        if likelyCellular {
-            logger.warning("⚠️ Device appears to be on cellular data!")
-            self.statusDescription = "Please connect to WiFi for device discovery"
-            return false
-        }
-        
-        return isValidPrivateIP
-    }
-    
-    // MARK: - Enhanced Network Interface Detection
-    private func getLocalIPAddress() -> String? {
-        var address: String?
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        
-        if getifaddrs(&ifaddr) == 0 {
-            var ptr = ifaddr
-            var foundInterfaces: [(String, String)] = []
-            
-            while ptr != nil {
-                defer { ptr = ptr?.pointee.ifa_next }
-                
-                let interface = ptr?.pointee
-                let addrFamily = interface?.ifa_addr.pointee.sa_family
-                
-                if addrFamily == UInt8(AF_INET) {
-                    let name = String(cString: (interface?.ifa_name)!)
-                    
-                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(
-                        interface?.ifa_addr,
-                        socklen_t((interface?.ifa_addr.pointee.sa_len)!),
-                        &hostname,
-                        socklen_t(hostname.count),
-                        nil,
-                        socklen_t(0),
-                        NI_NUMERICHOST
-                    )
-                    
-                    let ipAddress = String(cString: hostname)
-                    foundInterfaces.append((name, ipAddress))
-                }
-            }
-            freeifaddrs(ifaddr)
-            
-            // Priority order: prefer WiFi interfaces
-            let preferredInterfaces = ["en0", "en1", "wlan0"]
-            for preferred in preferredInterfaces {
-                if let found = foundInterfaces.first(where: { $0.0 == preferred }) {
-                    let ip = found.1
-                    if !ip.hasPrefix("127.") && !ip.hasPrefix("169.254.") && !ip.hasPrefix("fe80") {
-                        return ip
-                    }
-                }
-            }
-            
-            // Fallback: any non-loopback, non-cellular interface
-            for (name, ip) in foundInterfaces {
-                if !ip.hasPrefix("127.") &&
-                   !ip.hasPrefix("169.254.") &&
-                   !name.contains("pdp") &&
-                   !name.contains("cellular") {
-                    return ip
-                }
-            }
-        }
-        
-        return nil
-    }
-    
-    // MARK: - Debug Methods
-    func debugDiscoveryStatus() {
-        Task {
-            logger.info("🔍 ===== DISCOVERY STATUS =====")
-            logger.info("   - Service Running: \(self.isRunning)")
-            logger.info("   - Device Name: \(self.deviceName)")
-            logger.info("   - Device ID: \(self.deviceId)")
-            logger.info("   - Local IP: \(self.localIPAddress)")
-            logger.info("   - Connected Peers: \(self.connectedPeers.count)")
-            logger.info("   - Discovered Peers: \(self.discoveredPeers.count)")
-            logger.info("   - Trusted Devices: \(self.trustedDevices.count)")
-            logger.info("   - Native Services: \(self.discoveredServices.count)")
-            logger.info("   - Native Advertiser: \(self.nativeAdvertiser != nil ? "Running" : "Stopped")")
-            logger.info("   - Native Discovery: \(self.nativeDiscoveryBrowser != nil ? "Running" : "Stopped")")
-            
-            for peer in connectedPeers {
-                logger.info("     📱 Connected: \(peer.name) (\(peer.ipAddress))")
-            }
-            
-            for peer in discoveredPeers {
-                logger.info("     🔍 Discovered: \(peer.name) (\(peer.ipAddress))")
-            }
-            
-            logger.info("=============================")
-        }
-    }
-    
-    // MARK: - Enhanced Start Sync
-    func startSync() {
-        guard isInitialized, let bridge = rustBridge else {
-            logger.warning("⚠️ Cannot start sync - service not initialized")
-            return
-        }
-        
-        logger.info("🚀 ===== STARTING SYNC SERVICE =====")
-        
-        // Update network info
-        updateNetworkInfo()
-        
-        // Validate network
-        guard validateNetworkForDiscovery() else {
-            logger.error("❌ Network validation failed - cannot start discovery")
-            return
-        }
-        
-        Task {
-            // Start Rust TCP server (but skip Rust mDNS)
-            let success = await bridge.start()
-            
-            await MainActor.run {
-                if success {
-                    self.isRunning = true
-                    self.isDiscovering = true
-                    self.statusDescription = "Searching for devices..."
-                    self.startDiscoveryTimer()
-                    
-                    // Start iOS native advertising and discovery
-                    self.startNativeAdvertising()
-                    self.startNativeDiscovery()
-                    
-                    // Notify clipboard manager
-                    ClipboardManager.shared.syncServiceDidStart()
-                    
-                    logger.info("✅ Sync service started successfully")
-                    
-                    // Debug after start
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        self.debugDiscoveryStatus()
-                    }
-                } else {
-                    self.statusDescription = "Failed to start"
-                    logger.error("❌ Failed to start sync service")
-                }
-            }
-        }
-        
-        logger.info("==================================")
     }
     
     func stopSync() {
-        guard let bridge = rustBridge else { return }
-        
-        logger.info("🛑 Stopping sync service...")
-        
-        // Stop native services
-        stopNativeAdvertising()
-        stopNativeDiscovery()
+        logger.info("🛑 Stopping LocalPeerSync services...")
         
         Task {
-            let success = await bridge.stop()
+            if let bridge = rustBridge {
+                let _ = await bridge.stop()
+            }
+            
+            stopRobustDiscovery()
+            endBackgroundTask()
             
             await MainActor.run {
-                if success {
-                    self.isRunning = false
-                    self.isDiscovering = false
-                    self.connectedPeers.removeAll()
-                    self.discoveredPeers.removeAll()
-                    self.statusDescription = "Stopped"
-                    self.stopDiscoveryTimer()
-                    
-                    // Notify clipboard manager
-                    ClipboardManager.shared.syncServiceDidStop()
-                    
-                    logger.info("✅ Sync service stopped successfully")
-                } else {
-                    logger.error("❌ Failed to stop sync service")
-                }
+                isRunning = false
+                connectedPeers.removeAll()
+                discoveredPeers.removeAll()
+                statusMessage = "Stopped"
+                discoveryMethod = "Stopped"
             }
+            
+            logger.info("✅ All services stopped")
         }
     }
     
-    func syncClipboard(_ content: String) {
-        guard isInitialized, let bridge = rustBridge, isRunning else {
-            logger.info("📋 Skipping clipboard sync - service not ready")
-            return
+    func syncClipboard(_ content: String) async -> Bool {
+        guard isRunning, let bridge = rustBridge else {
+            logger.warning("⚠️ Cannot sync - service not running")
+            return false
         }
         
-        logger.info("📋 Syncing clipboard content: \(content.prefix(50))...")
+        logger.info("📋 Syncing clipboard with background support: \(content.prefix(50))...")
         
-        Task {
-            let success = await bridge.syncClipboard(content)
-            
-            await MainActor.run {
-                if success {
-                    self.syncCount += 1
-                    self.lastSyncTime = Date()
-                    logger.info("✅ Clipboard synced successfully")
-                    
-                    // Send notification if app is in background
-                    if UIApplication.shared.applicationState != .active {
-                        NotificationManager.shared.sendSyncNotification(content: content)
-                    }
-                } else {
-                    self.errorCount += 1
-                    logger.error("❌ Failed to sync clipboard")
-                }
+        // Start background task for sync operation
+        startBackgroundTask()
+        
+        let success = await bridge.notifyClipboardChange(content: content, type: .text)
+        
+        if success {
+            logger.info("✅ Clipboard sync successful")
+            if UIApplication.shared.applicationState != .active {
+                backgroundOperationsCount += 1
             }
+        } else {
+            logger.error("❌ Clipboard sync failed")
         }
+        
+        // Don't end background task immediately - let it finish naturally
+        
+        return success
     }
     
-    // MARK: - Peer Management
     func scanForDevices() async {
-        guard isRunning else { return }
+        logger.info("🔍 Starting comprehensive device scan...")
         
-        logger.info("🔍 Manually scanning for devices...")
-        isDiscovering = true
+        connectedPeers.removeAll()
+        discoveredPeers.removeAll()
         
-        // Restart native discovery
-        startNativeDiscovery()
+        await discoveryManager?.performFullScan()
         
-        // Update UI after scan
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            self.isDiscovering = false
-        }
-    }
-    
-    func connectToPeer(_ peer: PeerDevice) async {
-        logger.info("🤝 Connecting to peer: \(peer.name)")
-        await autoConnectToPeer(peer)
+        logger.info("📱 Scan completed - found \(self.connectedPeers.count) devices")
     }
     
     func refreshStatus() async {
-        await updatePeerStatus()
-        await updateNetworkInfo()
-    }
-    
-    func refreshPeers() async {
         guard let bridge = rustBridge else { return }
         
+        let isRustRunning = await bridge.isRunning()
         let peerCount = await bridge.getPeerCount()
-        let peerNames = await bridge.getPeers()
         
         await MainActor.run {
-            // Update status description
-            if self.isRunning {
-                if self.connectedPeers.isEmpty {
-                    self.statusDescription = "Searching for devices..."
-                } else {
-                    self.statusDescription = "Connected to \(self.connectedPeers.count) device\(self.connectedPeers.count == 1 ? "" : "s")"
-                }
+            if isRustRunning {
+                statusMessage = "Active - \(peerCount) peers"
+            } else {
+                statusMessage = "TCP server not running"
             }
         }
     }
     
-    func refreshConnections() async {
-        await refreshPeers()
+    func getDebugInfo() async -> String {
+        var info = ["=== LocalPeerSync Debug Info (Background Ready) ==="]
+        
+        info.append("App Status:")
+        info.append("  - Running: \(isRunning)")
+        info.append("  - Status: \(statusMessage)")
+        info.append("  - Discovery Method: \(discoveryMethod)")
+        info.append("  - Device: \(deviceName)")
+        info.append("  - Network Interface: \(currentNetworkInterface)")
+        info.append("  - Background Operations: \(backgroundOperationsCount)")
+        info.append("  - App State: \(UIApplication.shared.applicationState.description)")
+        
+        if let bridge = rustBridge {
+            let isRustRunning = await bridge.isRunning()
+            let peerCount = await bridge.getPeerCount()
+            let trustedCount = await bridge.getTrustedPeerCount()
+            
+            info.append("Rust Status:")
+            info.append("  - TCP Server: \(isRustRunning ? "Running" : "Stopped")")
+            info.append("  - Total Peers: \(peerCount)")
+            info.append("  - Trusted Peers: \(trustedCount)")
+        }
+        
+        info.append("Discovery Status:")
+        info.append("  - Connected Peers: \(connectedPeers.count)")
+        info.append("  - Discovered Peers: \(discoveredPeers.count)")
+        
+        if let manager = discoveryManager {
+            info.append("  - mDNS Status: \(manager.mdnsStatus)")
+            info.append("  - Scanner Status: \(manager.scannerStatus)")
+        }
+        
+        for peer in connectedPeers {
+            info.append("  - Connected: \(peer.name) (\(peer.ipAddress))")
+        }
+        
+        return info.joined(separator: "\n")
     }
     
     // MARK: - Private Methods
-    private func setupDeviceInfo() {
-        self.deviceName = UIDevice.current.name
-        self.deviceModel = UIDevice.current.model
-        self.deviceId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        
-        logger.info("📱 Device info: \(self.deviceName) (\(self.deviceModel))")
-    }
     
     private func setupNetworkMonitoring() {
         networkMonitor = NWPathMonitor()
         networkMonitor?.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
-                self?.handleNetworkChange(path)
+                if path.status == .satisfied {
+                    self?.currentNetworkInterface = self?.getNetworkInterfaceName(path) ?? "Unknown"
+                    self?.logger.info("🌐 Network connected via: \(self?.currentNetworkInterface ?? "Unknown")")
+                } else {
+                    self?.logger.warning("🌐 Network disconnected")
+                    self?.connectedPeers.removeAll()
+                    self?.currentNetworkInterface = "Disconnected"
+                }
             }
         }
         
@@ -621,179 +324,624 @@ class SyncService: ObservableObject {
         networkMonitor?.start(queue: queue)
     }
     
-    private func handleNetworkChange(_ path: NWPath) {
-        let isConnected = path.status == .satisfied
-        
-        if isConnected {
-            updateNetworkInfo()
-            
-            if isRunning {
-                Task {
-                    await refreshConnections()
-                }
-            }
+    private func getNetworkInterfaceName(_ path: NWPath) -> String {
+        if path.usesInterfaceType(.wifi) {
+            return "WiFi"
+        } else if path.usesInterfaceType(.cellular) {
+            return "Cellular"
+        } else if path.usesInterfaceType(.wiredEthernet) {
+            return "Ethernet"
         } else {
-            localIPAddress = "No connection"
-            currentNetworkName = "No network"
-            
-            connectedPeers.removeAll()
-            discoveredPeers.removeAll()
+            return "Other"
         }
-        
-        logger.info("🌐 Network status changed: \(isConnected ? "Connected" : "Disconnected")")
-    }
-    
-    private func updateNetworkInfo() {
-        localIPAddress = getLocalIPAddress() ?? "Unknown"
-        currentNetworkName = getWiFiNetworkName() ?? "Unknown"
     }
     
     private func initializeRustBridge() async throws {
-        let deviceName = "\(self.deviceName)-iOS"
+        let fullDeviceName = "\(deviceName)-iOS"
         
-        logger.info("🔧 Initializing Rust bridge with device name: \(deviceName)")
-        
-        guard let bridge = await RustBridge(deviceName: deviceName) else {
+        guard let bridge = await RustBridge(deviceName: fullDeviceName) else {
             throw SyncError.bridgeInitializationFailed
         }
         
         self.rustBridge = bridge
-        
-        let deviceInfo = await bridge.getDeviceInfo()
-        await MainActor.run {
-            self.deviceId = deviceInfo.id
-            if !deviceInfo.name.isEmpty {
-                self.deviceName = deviceInfo.name
-            }
-        }
-        
-        logger.info("✅ Rust bridge initialized successfully")
+        logger.info("✅ Rust bridge initialized with background support")
     }
     
-    private func startStatusUpdates() async {
-        statusUpdateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+    private func startTcpServer() async throws {
+        guard let bridge = rustBridge else {
+            throw SyncError.bridgeNotAvailable
+        }
+        
+        let success = await bridge.start()
+        
+        if !success {
+            throw SyncError.tcpServerFailed
+        }
+        
+        logger.info("✅ TCP server started on port \(self.port) with background support")
+    }
+    
+    private func startRobustDiscovery() async throws {
+        logger.info("🔍 Starting robust multi-method discovery with background support...")
+        
+        discoveryManager = MultiMethodDiscoveryManager(
+            deviceName: deviceName,
+            deviceId: deviceId,
+            port: port,
+            onPeerDiscovered: { [weak self] peer in
+                Task { @MainActor in
+                    self?.handleDiscoveredPeer(peer)
+                }
+            },
+            onDiscoveryStatusChanged: { [weak self] status in
+                Task { @MainActor in
+                    self?.discoveryMethod = status
+                }
+            }
+        )
+        
+        try await discoveryManager?.start()
+        
+        logger.info("✅ Robust discovery started with background support")
+    }
+    
+    private func stopRobustDiscovery() {
+        discoveryManager?.stop()
+        discoveryManager = nil
+        logger.info("🛑 Robust discovery stopped")
+    }
+    
+    private func handleDiscoveredPeer(_ peer: PeerDevice) {
+        logger.info("🎯 Discovered peer: \(peer.name) at \(peer.ipAddress)")
+        
+        if !connectedPeers.contains(where: { $0.id == peer.id }) {
+            connectedPeers.append(peer)
+            statusMessage = "Active - \(connectedPeers.count) devices"
+            
             Task {
-                await self?.refreshPeers()
+                await bridgeToRust(peer)
             }
+            
+            logger.info("✅ Added peer: \(peer.name)")
         }
+    }
+    
+    private func bridgeToRust(_ peer: PeerDevice) async {
+        guard let bridge = rustBridge else { return }
         
-        logger.info("⏰ Started status update timer")
-    }
-    
-    private func startDiscoveryTimer() {
-        discoveryTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            Task {
-                await self?.performPeriodicDiscovery()
-            }
-        }
-    }
-    
-    private func stopDiscoveryTimer() {
-        discoveryTimer?.invalidate()
-        discoveryTimer = nil
-    }
-    
-    private func performPeriodicDiscovery() async {
-        // Restart native discovery periodically
-        startNativeDiscovery()
-    }
-    
-    private func updatePeerStatus() async {
-        let now = Date()
+        let success = await bridge.addDiscoveredPeer(
+            deviceId: peer.id,
+            deviceName: peer.name,
+            ipAddress: peer.ipAddress,
+            port: peer.port
+        )
         
-        for i in 0..<connectedPeers.count {
-            connectedPeers[i].lastSeen = now
+        if success {
+            logger.info("✅ Bridged peer to Rust: \(peer.name)")
+        } else {
+            logger.error("❌ Failed to bridge peer to Rust: \(peer.name)")
         }
-    }
-    
-    private func getWiFiNetworkName() -> String? {
-        return "WiFi Network"
     }
     
     deinit {
-        logger.info("🧹 SyncService deinitializing")
-        statusUpdateTimer?.invalidate()
-        discoveryTimer?.invalidate()
-        networkMonitor?.cancel()
-        nativeAdvertiser?.stop()
-        nativeDiscoveryBrowser?.stop()
+        NotificationCenter.default.removeObserver(self)
+        
+        // FIXED: Use nonisolated cleanup
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+        }
+        
+        logger.info("🧹 SyncService deinitialized")
     }
 }
 
-// MARK: - Native Advertiser Delegate
-class NativeAdvertiserDelegate: NSObject, NetServiceDelegate {
-    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "NativeAdvertiser")
+// MARK: - Multi-Method Discovery Manager
+
+class MultiMethodDiscoveryManager {
+    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "Discovery")
     
-    func netServiceDidPublish(_ sender: NetService) {
-        logger.info("✅ NATIVE ADVERTISING: Successfully published \(sender.name)")
+    // Configuration
+    private let deviceName: String
+    private let deviceId: String
+    private let port: Int
+    
+    // Callbacks
+    private let onPeerDiscovered: (PeerDevice) -> Void
+    private let onDiscoveryStatusChanged: (String) -> Void
+    
+    // Discovery methods
+    private var mdnsDiscovery: MDNSDiscovery?
+    private var networkScanner: NetworkScanner?
+    private var advertisingService: AdvertisingService?
+    
+    // Status tracking
+    var mdnsStatus: String = "Stopped"
+    var scannerStatus: String = "Stopped"
+    
+    init(
+        deviceName: String,
+        deviceId: String,
+        port: Int,
+        onPeerDiscovered: @escaping (PeerDevice) -> Void,
+        onDiscoveryStatusChanged: @escaping (String) -> Void
+    ) {
+        self.deviceName = deviceName
+        self.deviceId = deviceId
+        self.port = port
+        self.onPeerDiscovered = onPeerDiscovered
+        self.onDiscoveryStatusChanged = onDiscoveryStatusChanged
     }
     
-    func netService(_ sender: NetService, didNotPublish errorDict: [String : NSNumber]) {
-        logger.error("❌ NATIVE ADVERTISING: Failed to publish \(sender.name): \(errorDict)")
+    func start() async throws {
+        logger.info("🚀 Starting multi-method discovery with background support...")
+        
+        // Start advertising first
+        advertisingService = AdvertisingService(
+            deviceName: deviceName,
+            deviceId: deviceId,
+            port: port
+        )
+        try advertisingService?.start()
+        
+        // Start mDNS discovery (primary method)
+        mdnsDiscovery = MDNSDiscovery(
+            deviceName: deviceName,
+            onPeerFound: { [weak self] peer in
+                self?.onPeerDiscovered(peer)
+            },
+            onStatusChanged: { [weak self] status in
+                self?.mdnsStatus = status
+                self?.updateStatus()
+            }
+        )
+        
+        mdnsDiscovery?.start()
+        
+        // Start network scanner (fallback method) with background awareness
+        networkScanner = NetworkScanner(
+            targetPort: port,
+            onPeerFound: { [weak self] peer in
+                self?.onPeerDiscovered(peer)
+            },
+            onStatusChanged: { [weak self] status in
+                self?.scannerStatus = status
+                self?.updateStatus()
+            }
+        )
+        
+        // Delay network scanner to give mDNS time to work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            self.networkScanner?.start()
+        }
+        
+        logger.info("✅ Multi-method discovery started")
     }
     
-    func netServiceDidStop(_ sender: NetService) {
-        logger.info("🛑 NATIVE ADVERTISING: Stopped advertising \(sender.name)")
+    func stop() {
+        mdnsDiscovery?.stop()
+        networkScanner?.stop()
+        advertisingService?.stop()
+        
+        mdnsStatus = "Stopped"
+        scannerStatus = "Stopped"
+        updateStatus()
+        
+        logger.info("🛑 Multi-method discovery stopped")
+    }
+    
+    func performFullScan() async {
+        logger.info("🔍 Performing full network scan...")
+        
+        // Restart mDNS
+        mdnsDiscovery?.restart()
+        
+        // Perform immediate network scan
+        await networkScanner?.performScan()
+        
+        logger.info("✅ Full scan completed")
+    }
+    
+    private func updateStatus() {
+        let status = "mDNS: \(mdnsStatus) | Scanner: \(scannerStatus)"
+        onDiscoveryStatusChanged(status)
     }
 }
 
-// MARK: - Native Discovery Delegate
-class NativeDiscoveryDelegate: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
-    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "NativeDiscovery")
-    private let onServiceDiscovered: (NetService) -> Void
+// MARK: - mDNS Discovery
+
+class MDNSDiscovery: NSObject {
+    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "mDNS")
     
-    init(onServiceDiscovered: @escaping (NetService) -> Void) {
-        self.onServiceDiscovered = onServiceDiscovered
+    private let deviceName: String
+    private let onPeerFound: (PeerDevice) -> Void
+    private let onStatusChanged: (String) -> Void
+    
+    private var browser: NetServiceBrowser?
+    private var foundServices: Set<String> = []
+    
+    init(
+        deviceName: String,
+        onPeerFound: @escaping (PeerDevice) -> Void,
+        onStatusChanged: @escaping (String) -> Void
+    ) {
+        self.deviceName = deviceName
+        self.onPeerFound = onPeerFound
+        self.onStatusChanged = onStatusChanged
         super.init()
     }
     
-    // MARK: - NetServiceBrowserDelegate
+    func start() {
+        logger.info("🔍 Starting mDNS discovery...")
+        
+        browser = NetServiceBrowser()
+        browser?.delegate = self
+        browser?.searchForServices(ofType: "_localpeersync._tcp.", inDomain: "local.")
+        
+        onStatusChanged("Starting...")
+    }
+    
+    func stop() {
+        browser?.stop()
+        browser = nil
+        foundServices.removeAll()
+        onStatusChanged("Stopped")
+        
+        logger.info("🛑 mDNS discovery stopped")
+    }
+    
+    func restart() {
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.start()
+        }
+    }
+}
+
+extension MDNSDiscovery: NetServiceBrowserDelegate, NetServiceDelegate {
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
-        logger.info("🎯 NATIVE DISCOVERY: Found service \(service.name)")
-        onServiceDiscovered(service)
+        guard service.name != deviceName else { return }
+        
+        logger.info("🔍 Found mDNS service: \(service.name)")
+        foundServices.insert(service.name)
+        onStatusChanged("Found \(foundServices.count) services")
+        
+        // Don't try to resolve - create peer with basic info
+        let peer = PeerDevice(
+            id: service.name,
+            name: service.name,
+            model: "Unknown",
+            deviceType: .unknown,
+            ipAddress: "0.0.0.0", // Will be resolved by network scanner
+            port: service.port,
+            connectionStatus: .discovered,
+            isConnected: false,
+            isTrusted: true
+        )
+        
+        onPeerFound(peer)
     }
     
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
-        logger.info("🚫 NATIVE DISCOVERY: Removed service \(service.name)")
-    }
-    
-    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String : NSNumber]) {
-        logger.error("❌ NATIVE DISCOVERY: Search error \(errorDict)")
+        logger.info("🚫 mDNS service removed: \(service.name)")
+        foundServices.remove(service.name)
+        onStatusChanged("Active - \(foundServices.count) services")
     }
     
     func netServiceBrowserDidStopSearch(_ browser: NetServiceBrowser) {
-        logger.info("🛑 NATIVE DISCOVERY: Search stopped")
+        onStatusChanged("Search stopped")
     }
     
-    // MARK: - NetServiceDelegate
-    func netServiceDidResolveAddress(_ sender: NetService) {
-        logger.info("✅ NATIVE DISCOVERY: Resolved \(sender.name)")
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String : NSNumber]) {
+        logger.error("❌ mDNS search error: \(errorDict)")
+        onStatusChanged("Error: \(errorDict)")
+    }
+}
+
+// MARK: - Background-Aware Network Scanner (FIXED)
+
+class NetworkScanner {
+    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "Scanner")
+    
+    private let targetPort: Int
+    private let onPeerFound: (PeerDevice) -> Void
+    private let onStatusChanged: (String) -> Void
+    
+    private var isScanning = false
+    private var scanTimer: Timer?
+    private let maxConcurrentConnections = 5 // FIXED: Limit for iOS
+    
+    init(
+        targetPort: Int,
+        onPeerFound: @escaping (PeerDevice) -> Void,
+        onStatusChanged: @escaping (String) -> Void
+    ) {
+        self.targetPort = targetPort
+        self.onPeerFound = onPeerFound
+        self.onStatusChanged = onStatusChanged
+    }
+    
+    func start() {
+        guard !isScanning else { return }
         
-        // Notify the SyncService about the resolved service
-        DispatchQueue.main.async {
-            SyncService.shared.handleResolvedService(sender)
+        logger.info("🔍 Starting background-aware network scanner...")
+        isScanning = true
+        onStatusChanged("Starting scan...")
+        
+        Task {
+            await performScan()
+        }
+        
+        // Background-aware scanning interval
+        let interval: TimeInterval = UIApplication.shared.applicationState == .active ? 30.0 : 60.0
+        scanTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            Task {
+                await self.performScan()
+            }
         }
     }
     
-    func netService(_ sender: NetService, didNotResolve errorDict: [String : NSNumber]) {
-        logger.error("❌ NATIVE DISCOVERY: Failed to resolve \(sender.name): \(errorDict)")
+    func stop() {
+        isScanning = false
+        scanTimer?.invalidate()
+        scanTimer = nil
+        onStatusChanged("Stopped")
+        
+        logger.info("🛑 Network scanner stopped")
+    }
+    
+    func performScan() async {
+        guard isScanning else { return }
+        
+        logger.info("🔍 Performing background-aware network scan...")
+        onStatusChanged("Scanning...")
+        
+        guard let localIP = getLocalIPAddress(),
+              let networkRange = getNetworkRange(from: localIP) else {
+            logger.warning("⚠️ Could not determine network range")
+            onStatusChanged("No network")
+            return
+        }
+        
+        logger.info("🔍 Scanning network range: \(networkRange)")
+        
+        // FIXED: Scan in small batches for iOS background compatibility
+        let batchSize = maxConcurrentConnections
+        
+        for batchStart in stride(from: 1, through: 254, by: batchSize) {
+            guard isScanning else { break }
+            
+            let batchEnd = min(batchStart + batchSize - 1, 254)
+            
+            await withTaskGroup(of: Void.self) { group in
+                for i in batchStart...batchEnd {
+                    let targetIP = "\(networkRange).\(i)"
+                    
+                    group.addTask {
+                        await self.testConnection(to: targetIP)
+                    }
+                }
+            }
+            
+            // Longer delay for background scanning
+            let delay = UIApplication.shared.applicationState == .active ? 50_000_000 : 200_000_000 // 0.05s or 0.2s
+            try? await Task.sleep(nanoseconds: UInt64(delay))
+        }
+        
+        onStatusChanged("Scan complete")
+        logger.info("✅ Network scan completed")
+    }
+    
+    private func testConnection(to ipAddress: String) async {
+        do {
+            let connection = NWConnection(
+                host: NWEndpoint.Host(ipAddress),
+                port: NWEndpoint.Port(integerLiteral: UInt16(targetPort)),
+                using: .tcp
+            )
+            
+            connection.start(queue: DispatchQueue.global())
+            
+            // Shorter timeout for background operation
+            let timeout = UIApplication.shared.applicationState == .active ? 2.0 : 1.0
+            let result = await withTimeout(seconds: timeout) {
+                await withCheckedContinuation { continuation in
+                    connection.stateUpdateHandler = { state in
+                        switch state {
+                        case .ready:
+                            continuation.resume(returning: true)
+                        case .failed:
+                            continuation.resume(returning: false)
+                        default:
+                            break
+                        }
+                    }
+                }
+            }
+            
+            connection.cancel()
+            
+            if result == true {
+                logger.info("✅ Found peer at: \(ipAddress)")
+                
+                let peer = PeerDevice(
+                    id: ipAddress,
+                    name: "Device-\(ipAddress.suffix(3))",
+                    model: "Network Device",
+                    deviceType: .unknown,
+                    ipAddress: ipAddress,
+                    port: targetPort,
+                    connectionStatus: .connected,
+                    isConnected: true,
+                    isTrusted: true
+                )
+                
+                onPeerFound(peer)
+            }
+            
+        } catch {
+            // Connection failed - ignore
+        }
+    }
+    
+    private func getLocalIPAddress() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        
+        if getifaddrs(&ifaddr) == 0 {
+            var ptr = ifaddr
+            while ptr != nil {
+                defer { ptr = ptr?.pointee.ifa_next }
+                
+                guard let interface = ptr?.pointee else { continue }
+                let addrFamily = interface.ifa_addr.pointee.sa_family
+                
+                if addrFamily == UInt8(AF_INET) {
+                    let name = String(cString: interface.ifa_name)
+                    
+                    if name == "en0" || name.hasPrefix("en") {
+                        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                        getnameinfo(
+                            interface.ifa_addr,
+                            socklen_t(interface.ifa_addr.pointee.sa_len),
+                            &hostname,
+                            socklen_t(hostname.count),
+                            nil,
+                            socklen_t(0),
+                            NI_NUMERICHOST
+                        )
+                        
+                        let addr = String(cString: hostname)
+                        if !addr.hasPrefix("127.") && !addr.hasPrefix("169.254.") {
+                            address = addr
+                            break
+                        }
+                    }
+                }
+            }
+            freeifaddrs(ifaddr)
+        }
+        
+        return address
+    }
+    
+    private func getNetworkRange(from ipAddress: String) -> String? {
+        let components = ipAddress.components(separatedBy: ".")
+        guard components.count == 4 else { return nil }
+        
+        return "\(components[0]).\(components[1]).\(components[2])"
+    }
+}
+
+// MARK: - Advertising Service
+
+class AdvertisingService: NSObject {
+    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "Advertising")
+    
+    private let deviceName: String
+    private let deviceId: String
+    private let port: Int
+    
+    private var netService: NetService?
+    
+    init(deviceName: String, deviceId: String, port: Int) {
+        self.deviceName = deviceName
+        self.deviceId = deviceId
+        self.port = port
+        super.init()
+    }
+    
+    func start() throws {
+        netService = NetService(
+            domain: "local.",
+            type: "_localpeersync._tcp.",
+            name: deviceName,
+            port: Int32(port)
+        )
+        
+        netService?.delegate = self
+        
+        // Set TXT record
+        let txtData = createTXTRecord()
+        netService?.setTXTRecord(txtData)
+        
+        netService?.publish()
+        logger.info("📡 Started advertising: \(self.deviceName)")
+    }
+    
+    func stop() {
+        netService?.stop()
+        netService = nil
+        logger.info("🛑 Stopped advertising")
+    }
+    
+    private func createTXTRecord() -> Data {
+        let txtDict: [String: Data] = [
+            "device_id": deviceId.data(using: .utf8) ?? Data(),
+            "version": "1.0.0".data(using: .utf8) ?? Data(),
+            "encryption": "true".data(using: .utf8) ?? Data(),
+            "port": "\(port)".data(using: .utf8) ?? Data()
+        ]
+        return NetService.data(fromTXTRecord: txtDict)
+    }
+}
+
+extension AdvertisingService: NetServiceDelegate {
+    func netServiceDidPublish(_ sender: NetService) {
+        logger.info("✅ Successfully published: \(sender.name)")
+    }
+    
+    func netService(_ sender: NetService, didNotPublish errorDict: [String : NSNumber]) {
+        logger.error("❌ Failed to publish: \(errorDict)")
+    }
+}
+
+// MARK: - Utility Functions
+
+func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async -> T) async -> T? {
+    return await withTaskGroup(of: T?.self) { group in
+        group.addTask {
+            await operation()
+        }
+        
+        group.addTask {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            return nil
+        }
+        
+        let result = await group.next()
+        group.cancelAll()
+        return result ?? nil
     }
 }
 
 // MARK: - Supporting Types
+
 enum SyncError: LocalizedError {
     case bridgeInitializationFailed
-    case networkUnavailable
-    case peerConnectionFailed
+    case bridgeNotAvailable
+    case tcpServerFailed
     
     var errorDescription: String? {
         switch self {
         case .bridgeInitializationFailed:
-            return "Failed to initialize sync bridge"
-        case .networkUnavailable:
-            return "Network connection unavailable"
-        case .peerConnectionFailed:
-            return "Failed to connect to peer device"
+            return "Failed to initialize Rust bridge"
+        case .bridgeNotAvailable:
+            return "Rust bridge not available"
+        case .tcpServerFailed:
+            return "Failed to start TCP server"
+        }
+    }
+}
+
+// MARK: - Supporting Extensions
+
+extension UIApplication.State {
+    var description: String {
+        switch self {
+        case .active: return "Active"
+        case .inactive: return "Inactive"
+        case .background: return "Background"
+        @unknown default: return "Unknown"
         }
     }
 }

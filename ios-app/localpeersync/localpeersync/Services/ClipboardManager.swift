@@ -1,66 +1,57 @@
 //
 //  ClipboardManager.swift
-//  LocalPeerSync
-//
-//  ENHANCED iOS clipboard management - FIXED compilation errors
+//  LocalPeerSync - Background Ready (FIXED ACTOR ISSUES)
 //
 
 import Foundation
 import UIKit
-import UserNotifications
-import UniformTypeIdentifiers
 import os.log
+import BackgroundTasks
 
 @MainActor
 class ClipboardManager: ObservableObject {
     static let shared = ClipboardManager()
     
     // MARK: - Published Properties
-    @Published var allItems: [ClipboardItem] = []
-    @Published var recentItems: [ClipboardItem] = []
-    @Published var favoriteItems: [ClipboardItem] = []
-    @Published var unreadCount: Int = 0
-    @Published var totalSyncCount: Int = 0
-    @Published var lastClipboardContent: String = ""
+    @Published var currentContent: String = ""
+    @Published var lastSyncTime: Date?
+    @Published var syncCount: Int = 0
     @Published var isMonitoring: Bool = false
-    @Published var rustClipboardEnabled: Bool = true
-    @Published var syncSuccessCount: Int = 0
-    @Published var syncFailureCount: Int = 0
+    @Published var backgroundSyncCount: Int = 0
     
     // MARK: - Private Properties
     private let pasteboard = UIPasteboard.general
     private var lastChangeCount: Int = 0
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "ClipboardManager")
-    private let maxHistorySize = 200
+    private var monitoringTimer: Timer?
     private var ignoreNextChange = false
-    private var isHandlingRustUpdate = false
-    private var lastSyncAttempt: Date?
+    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "ClipboardManager")
     
-    // MARK: - Enhanced Properties
-    private var clipboardCheckTimer: Timer?
-    private var syncRetryQueue: [String] = []
-    private var maxRetries = 3
+    // MARK: - Background Support
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var lastBackgroundSync: Date = Date()
+    private var pendingClipboardChanges: [String] = []
     
-    // MARK: - Storage
-    private let userDefaults = UserDefaults.standard
-    private let historyKey = "ClipboardHistory"
-    private let statsKey = "ClipboardStats"
-    
-    // MARK: - Initialization
     private init() {
-        loadStoredHistory()
-        setupEnhancedClipboardMonitoring()
-        loadStatistics()
-        setupSyncRetryMechanism()
+        setupInitialState()
+        setupBackgroundObservers()
     }
     
-    // MARK: - Enhanced Setup
-    private func setupEnhancedClipboardMonitoring() {
-        lastChangeCount = pasteboard.changeCount
-        if let content = pasteboard.string {
-            lastClipboardContent = content
-        }
+    // MARK: - Background Setup
+    
+    private func setupBackgroundObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
         
         NotificationCenter.default.addObserver(
             self,
@@ -68,599 +59,416 @@ class ClipboardManager: ObservableObject {
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(appWillResignActive),
-            name: UIApplication.willResignActiveNotification,
-            object: nil
-        )
-        
-        logger.info("🔍 ENHANCED clipboard monitoring setup complete")
     }
     
-    private func setupSyncRetryMechanism() {
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+    @objc private func appDidEnterBackground() {
+        logger.info("📱 App entering background - starting extended background task")
+        startBackgroundTask()
+        
+        // Cache current state for background processing
+        if !currentContent.isEmpty {
+            pendingClipboardChanges.append(currentContent)
+        }
+    }
+    
+    @objc private func appWillEnterForeground() {
+        logger.info("📱 App entering foreground - processing pending changes")
+        endBackgroundTask()
+        
+        // Process any pending changes
+        processPendingChanges()
+    }
+    
+    @objc private func appDidBecomeActive() {
+        logger.info("📱 App became active - refreshing clipboard state")
+        
+        // Check for clipboard changes that happened while backgrounded
+        checkForBackgroundClipboardChanges()
+    }
+    
+    // FIXED: Make background task methods nonisolated
+    nonisolated private func startBackgroundTask() {
+        Task { @MainActor in
+            await _startBackgroundTask()
+        }
+    }
+    
+    private func _startBackgroundTask() async {
+        endBackgroundTaskSync() // End any existing task
+        
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ClipboardSync") { [weak self] in
+            self?.logger.warning("⏰ Background task expiring")
             Task { @MainActor in
-                await self?.processSyncRetryQueue()
+                await self?._endBackgroundTask()
             }
+        }
+        
+        if backgroundTask != .invalid {
+            logger.info("✅ Background task started: \(self.backgroundTask.rawValue)")
+        }
+    }
+    
+    // FIXED: Make this nonisolated for deinit
+    nonisolated private func endBackgroundTask() {
+        Task { @MainActor in
+            await _endBackgroundTask()
+        }
+    }
+    
+    // FIXED: Synchronous version for deinit
+    private func endBackgroundTaskSync() {
+        if backgroundTask != .invalid {
+            logger.info("🛑 Ending background task: \(self.backgroundTask.rawValue)")
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+    }
+    
+    private func _endBackgroundTask() async {
+        endBackgroundTaskSync()
+    }
+    
+    private func processPendingChanges() {
+        guard !pendingClipboardChanges.isEmpty else { return }
+        
+        logger.info("🔄 Processing \(self.pendingClipboardChanges.count) pending clipboard changes")
+        
+        for change in pendingClipboardChanges {
+            Task {
+                let success = await SyncService.shared.syncClipboard(change)
+                if success {
+                    await MainActor.run {
+                        self.backgroundSyncCount += 1
+                    }
+                }
+            }
+        }
+        
+        pendingClipboardChanges.removeAll()
+    }
+    
+    private func checkForBackgroundClipboardChanges() {
+        let currentChangeCount = pasteboard.changeCount
+        
+        if currentChangeCount != lastChangeCount {
+            logger.info("📋 Clipboard changed while app was backgrounded")
+            
+            if let content = pasteboard.string, !content.isEmpty, content != currentContent {
+                currentContent = content
+                lastChangeCount = currentChangeCount
+                
+                Task {
+                    let success = await SyncService.shared.syncClipboard(content)
+                    if success {
+                        await MainActor.run {
+                            self.syncCount += 1
+                            self.lastSyncTime = Date()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func requestClipboardPermission() async -> Bool {
+        // For iOS 16+, we need to check clipboard access
+        if #available(iOS 16.0, *) {
+            // Test clipboard access by attempting to read
+            let testString = "clipboard_test_\(UUID().uuidString)"
+            
+            // Try to write test string
+            UIPasteboard.general.string = testString
+            
+            // Try to read it back
+            if UIPasteboard.general.string == testString {
+                logger.info("✅ Clipboard permission granted")
+                return true
+            } else {
+                logger.error("❌ Clipboard permission denied")
+                
+                // Show user an alert to grant permission
+                await MainActor.run {
+                    // You could show an alert here explaining clipboard permission
+                }
+                return false
+            }
+        }
+        
+        return true // Older iOS versions don't need explicit permission
+    }
+    
+    // MARK: - Clipboard Permission Check
+
+    private func checkClipboardPermissions() -> Bool {
+        // iOS 16+ requires permission for clipboard access
+        if #available(iOS 16.0, *) {
+            // Test clipboard access
+            let testWrite = "test"
+            UIPasteboard.general.string = testWrite
+            
+            if UIPasteboard.general.string == testWrite {
+                logger.info("✅ Clipboard permissions granted")
+                return true
+            } else {
+                logger.error("❌ Clipboard permissions denied")
+                return false
+            }
+        } else {
+            return true
         }
     }
     
     // MARK: - Public Methods
-    func syncServiceDidStart() {
-        startEnhancedMonitoring()
-    }
     
-    func syncServiceDidStop() {
-        stopEnhancedMonitoring()
-    }
-    
-    private func startEnhancedMonitoring() {
+    func startMonitoring() async {
         guard !isMonitoring else { return }
+            
+            // Check clipboard permission first
+            let hasPermission = await requestClipboardPermission()
+            guard hasPermission else {
+                logger.error("❌ Cannot start monitoring - no clipboard permission")
+                return
+            }
+            
+            logger.info("🔍 Starting clipboard monitoring with background support")
         
         lastChangeCount = pasteboard.changeCount
         if let content = pasteboard.string {
-            lastClipboardContent = content
+            currentContent = content
         }
         
-        clipboardCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Start monitoring timer with background-aware interval
+        let interval: TimeInterval = UIApplication.shared.applicationState == .active ? 0.5 : 2.0
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.checkClipboardChanges()
+                self?.checkForClipboardChanges()
             }
         }
         
         isMonitoring = true
-        logger.info("🔍 Started ENHANCED clipboard monitoring")
+        logger.info("✅ Clipboard monitoring started")
     }
     
-    private func stopEnhancedMonitoring() {
+    func stopMonitoring() {
         guard isMonitoring else { return }
         
-        clipboardCheckTimer?.invalidate()
-        clipboardCheckTimer = nil
+        logger.info("🛑 Stopping clipboard monitoring")
         
-        NotificationCenter.default.removeObserver(self)
+        monitoringTimer?.invalidate()
+        monitoringTimer = nil
         isMonitoring = false
-        logger.info("🛑 Stopped ENHANCED clipboard monitoring")
+        endBackgroundTask()
+        
+        logger.info("✅ Clipboard monitoring stopped")
     }
     
-    func checkClipboardChanges() {
-        guard !isHandlingRustUpdate else { return }
+    /// Set clipboard content from network (called by FFI bridge)
+    func setClipboardContentFromNetwork(_ content: String) {
+        logger.info("📋 Setting clipboard content from network: \(content.prefix(50))...")
         
+        ignoreNextChange = true
+        pasteboard.string = content
+        currentContent = content
+        lastChangeCount = pasteboard.changeCount
+        
+        logger.info("✅ Clipboard content set from network")
+        
+        // Update stats
+        backgroundSyncCount += 1
+        lastSyncTime = Date()
+    }
+    
+    /// Set clipboard content manually
+    func setClipboardContent(_ content: String, source: String = "manual") {
+        logger.info("📋 Setting clipboard content from \(source): \(content.prefix(50))...")
+        
+        ignoreNextChange = true
+        pasteboard.string = content
+        currentContent = content
+        lastChangeCount = pasteboard.changeCount
+        
+        logger.info("✅ Clipboard content set successfully")
+    }
+    
+    func syncCurrentContent() async -> Bool {
+        guard !currentContent.isEmpty else {
+            logger.warning("⚠️ No content to sync")
+            return false
+        }
+        
+        logger.info("📤 Manually syncing current clipboard content")
+        
+        // Start background task for sync operation
+        startBackgroundTask()
+        
+        let success = await SyncService.shared.syncClipboard(currentContent)
+        
+        if success {
+            syncCount += 1
+            lastSyncTime = Date()
+            logger.info("✅ Manual sync successful")
+        } else {
+            logger.error("❌ Manual sync failed")
+        }
+        
+        endBackgroundTask()
+        return success
+    }
+    
+    // MARK: - Private Methods
+    
+    private func setupInitialState() {
+        lastChangeCount = pasteboard.changeCount
+        if let content = pasteboard.string {
+            currentContent = content
+        }
+        logger.info("📋 Clipboard manager initialized with background support")
+    }
+    
+    private func checkForClipboardChanges() {
         let currentChangeCount = pasteboard.changeCount
         
         guard currentChangeCount != lastChangeCount else { return }
         
         lastChangeCount = currentChangeCount
         
-        if let newContent = getCurrentClipboardContent(),
-           newContent.content != lastClipboardContent,
-           !ignoreNextChange {
-            
-            lastClipboardContent = newContent.content
-            processNewClipboardContent(newContent)
+        if ignoreNextChange {
+            ignoreNextChange = false
+            logger.info("🔇 Ignoring clipboard change (set by network)")
+            return
         }
         
-        ignoreNextChange = false
-    }
-    
-    func saveCurrentState() {
-        saveHistoryToStorage()
-        saveEnhancedStatistics()
-    }
-    
-    // MARK: - Enhanced Rust Integration
-    
-    func handleRustClipboardUpdate(_ content: String, source: String) {
-        isHandlingRustUpdate = true
-        defer { isHandlingRustUpdate = false }
+        guard let newContent = pasteboard.string, !newContent.isEmpty else {
+            logger.info("📋 Clipboard cleared or empty")
+            currentContent = ""
+            return
+        }
         
-        logger.info("📋 Handling ENHANCED Rust clipboard update from \(source)")
+        guard newContent != currentContent else { return }
         
-        lastClipboardContent = content
-        lastChangeCount = pasteboard.changeCount
+        logger.info("📋 Clipboard changed: \(newContent.prefix(50))...")
+        currentContent = newContent
         
-        let clipboardContent = ClipboardContent(
-            content: content,
-            type: .text,
-            size: content.utf8.count,
-            timestamp: Date(),
-            sourceDevice: source
-        )
-        
-        processNewClipboardContent(clipboardContent)
-        
-        logger.info("📋 ENHANCED Rust clipboard update processed: \(content.prefix(50))...")
-    }
-    
-    func handleRustImageUpdate(_ image: UIImage, source: String) {
-        isHandlingRustUpdate = true
-        defer { isHandlingRustUpdate = false }
-        
-        lastChangeCount = pasteboard.changeCount
-        
-        let clipboardContent = ClipboardContent(
-            content: "Image (\(Int(image.size.width))x\(Int(image.size.height)))",
-            type: .image,
-            size: Int(image.size.width * image.size.height * 4),
-            timestamp: Date(),
-            sourceDevice: source,
-            imageData: image.pngData()
-        )
-        
-        processNewClipboardContent(clipboardContent)
-        
-        logger.info("📋 ENHANCED Rust image update processed from \(source)")
-    }
-    
-    func handleRustURLUpdate(_ url: String, source: String) {
-        isHandlingRustUpdate = true
-        defer { isHandlingRustUpdate = false }
-        
-        lastClipboardContent = url
-        lastChangeCount = pasteboard.changeCount
-        
-        let clipboardContent = ClipboardContent(
-            content: url,
-            type: .url,
-            size: url.utf8.count,
-            timestamp: Date(),
-            sourceDevice: source
-        )
-        
-        processNewClipboardContent(clipboardContent)
-        
-        logger.info("📋 ENHANCED Rust URL update processed: \(url)")
-    }
-    
-    // MARK: - 🔧 FIXED: Enhanced Sync Mechanism
-    
-    private func notifyRustOfClipboardChange(_ content: String, type: ClipboardContentType = .text) {
-        guard rustClipboardEnabled else { return }
-        
-        lastSyncAttempt = Date()
-        
-        Task {
-            // Check if sync service is running
-            guard SyncService.shared.isRunning else {
-                logger.info("📋 Sync service not running, queuing for retry...")
-                addToSyncRetryQueue(content)
-                return
+        // Handle sync with background support
+        if UIApplication.shared.applicationState == .active {
+            // App is active - sync immediately
+            Task {
+                let success = await SyncService.shared.syncClipboard(newContent)
+                
+                await MainActor.run {
+                    if success {
+                        self.syncCount += 1
+                        self.lastSyncTime = Date()
+                        self.logger.info("✅ Clipboard sync successful")
+                    } else {
+                        self.logger.error("❌ Clipboard sync failed")
+                    }
+                }
             }
+        } else {
+            // App is backgrounded - queue for later
+            logger.info("📱 App backgrounded - queuing clipboard change")
+            pendingClipboardChanges.append(newContent)
             
-            let success = await SyncService.shared.notifyClipboardChange(content: content, type: type)
-            
-            await MainActor.run {
-                if success {
-                    self.syncSuccessCount += 1
-                    self.logger.info("✅ ENHANCED clipboard sync successful")
-                } else {
-                    self.syncFailureCount += 1
-                    self.logger.error("❌ ENHANCED clipboard sync failed, queuing for retry")
-                    self.addToSyncRetryQueue(content)
+            // Try immediate sync if we have background time
+            if backgroundTask != .invalid {
+                Task {
+                    let success = await SyncService.shared.syncClipboard(newContent)
+                    if success {
+                        await MainActor.run {
+                            self.backgroundSyncCount += 1
+                            self.lastSyncTime = Date()
+                        }
+                    }
                 }
             }
         }
     }
     
-    private func addToSyncRetryQueue(_ content: String) {
-        if syncRetryQueue.count < 10 {
-            syncRetryQueue.append(content)
-            logger.info("📋 Added to sync retry queue: \(self.syncRetryQueue.count) items")
+    // MARK: - Utility Methods
+    
+    func getStats() -> ClipboardStats {
+        return ClipboardStats(
+            syncCount: syncCount,
+            backgroundSyncCount: backgroundSyncCount,
+            lastSyncTime: lastSyncTime,
+            isMonitoring: isMonitoring,
+            currentContentLength: currentContent.count
+        )
+    }
+    
+    func resetStats() {
+        syncCount = 0
+        backgroundSyncCount = 0
+        lastSyncTime = nil
+        logger.info("📊 Clipboard statistics reset")
+    }
+    
+    func getCurrentContentPreview(maxLength: Int = 100) -> String {
+        if currentContent.isEmpty {
+            return "No content"
         }
-    }
-    
-    private func processSyncRetryQueue() async {
-        // Check if we have items to retry and service is running
-        guard !syncRetryQueue.isEmpty && SyncService.shared.isRunning else { return }
         
-        let contentToRetry = syncRetryQueue.removeFirst()
-        logger.info("📋 Retrying sync from queue: \(contentToRetry.prefix(30))...")
-        
-        let success = await SyncService.shared.notifyClipboardChange(content: contentToRetry, type: .text)
-        
-        if success {
-            syncSuccessCount += 1
-            logger.info("✅ Retry sync successful")
-        } else {
-            syncFailureCount += 1
-            logger.error("❌ Retry sync failed")
-            
-            if syncRetryQueue.count < 5 {
-                syncRetryQueue.append(contentToRetry)
-            }
+        if currentContent.count <= maxLength {
+            return currentContent
         }
+        
+        return String(currentContent.prefix(maxLength)) + "..."
     }
     
-    // MARK: - Clipboard Operations
-    func copyItem(_ item: ClipboardItem) {
-        setClipboardContent(item.content, source: "history")
-        markItemAsRead(item)
-        HapticFeedback.success()
-        
-        logger.info("📋 Copied item from history: \(item.displayContent.prefix(50))")
+    func copyText(_ text: String) {
+        setClipboardContent(text, source: "manual")
     }
     
-    func setClipboardContent(_ content: String, source: String = "network") {
-        ignoreNextChange = true
-        
-        pasteboard.string = content
-        lastClipboardContent = content
+    func clearClipboard() {
+        pasteboard.string = ""
+        currentContent = ""
         lastChangeCount = pasteboard.changeCount
-        
-        logger.info("📋 Set clipboard content from \(source): \(content.prefix(50))...")
+        logger.info("🗑️ Clipboard cleared")
     }
     
-    func addTextToClipboard(_ text: String) {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else { return }
-        
-        pasteboard.string = trimmedText
-        
-        let clipboardContent = ClipboardContent(
-            content: trimmedText,
-            type: .text,
-            size: trimmedText.utf8.count,
-            timestamp: Date(),
-            sourceDevice: UIDevice.current.name
-        )
-        
-        processNewClipboardContent(clipboardContent)
-        notifyRustOfClipboardChange(trimmedText, type: .text)
-        
-        HapticFeedback.success()
-        logger.info("📝 Added text to clipboard manually")
-    }
-    
-    // MARK: - History Management
-    func deleteItem(_ item: ClipboardItem) {
-        allItems.removeAll { $0.id == item.id }
-        recentItems.removeAll { $0.id == item.id }
-        favoriteItems.removeAll { $0.id == item.id }
-        
-        saveHistoryToStorage()
-        HapticFeedback.light()
-        
-        logger.info("🗑️ Deleted clipboard item")
-    }
-    
-    func toggleFavorite(_ item: ClipboardItem) {
-        if let index = allItems.firstIndex(where: { $0.id == item.id }) {
-            allItems[index].isFavorite.toggle()
-            
-            if allItems[index].isFavorite {
-                favoriteItems.append(allItems[index])
-            } else {
-                favoriteItems.removeAll { $0.id == item.id }
-            }
-            
-            saveHistoryToStorage()
-            HapticFeedback.light()
-        }
-    }
-    
-    func markItemAsRead(_ item: ClipboardItem) {
-        if let index = allItems.firstIndex(where: { $0.id == item.id }) {
-            if !allItems[index].isRead {
-                allItems[index].isRead = true
-                unreadCount = max(0, unreadCount - 1)
-                saveHistoryToStorage()
-            }
-        }
-    }
-    
-    func clearAllHistory() {
-        allItems.removeAll()
-        recentItems.removeAll()
-        favoriteItems.removeAll()
-        unreadCount = 0
-        
-        saveHistoryToStorage()
-        
-        logger.info("🧹 Cleared all clipboard history")
-    }
-    
-    func shareItem(_ item: ClipboardItem) {
-        let activityVC = UIActivityViewController(
-            activityItems: [item.content],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first,
-           let rootVC = window.rootViewController {
-            
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = window
-                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            
-            rootVC.present(activityVC, animated: true)
-        }
-    }
-    
-    func exportHistory() {
-        let historyData = allItems.map { item in
-            [
-                "content": item.content,
-                "type": item.type.rawValue,
-                "timestamp": item.timestamp.ISO8601String(),
-                "sourceDevice": item.sourceDevice,
-                "isFavorite": item.isFavorite
-            ]
-        }
-        
-        if let jsonData = try? JSONSerialization.data(withJSONObject: historyData, options: .prettyPrinted),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            
-            let activityVC = UIActivityViewController(
-                activityItems: [jsonString],
-                applicationActivities: nil
-            )
-            
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let window = windowScene.windows.first,
-               let rootVC = window.rootViewController {
-                rootVC.present(activityVC, animated: true)
-            }
-        }
-    }
-    
-    func importHistory() {
-        logger.info("📥 Import history requested")
-    }
-    
-    // MARK: - Enhanced Diagnostics
-    
-    func getDiagnostics() -> [String: Any] {
-        return [
-            "monitoring": isMonitoring,
-            "total_items": allItems.count,
-            "sync_success_count": syncSuccessCount,
-            "sync_failure_count": syncFailureCount,
-            "retry_queue_size": syncRetryQueue.count,
-            "last_sync_attempt": lastSyncAttempt?.timeIntervalSince1970 ?? 0,
-            "rust_enabled": rustClipboardEnabled,
-            "last_change_count": lastChangeCount
-        ]
-    }
-    
-    // MARK: - Private Methods
-    
-    @objc private func appDidBecomeActive() {
-        checkClipboardChanges()
-        
-        Task {
-            await processSyncRetryQueue()
-        }
-    }
-    
-    @objc private func appWillResignActive() {
-        scheduleBackgroundClipboardCheck()
-    }
-    
-    private func scheduleBackgroundClipboardCheck() {
-        let currentTask = backgroundTask
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ClipboardCheck") { [weak self] in
-            self?.endBackgroundTask()
-        }
-        
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.checkClipboardChanges()
-                self?.endBackgroundTask()
-            }
-        }
-    }
-    
-    nonisolated private func endBackgroundTask() {
-        Task { @MainActor in
-            if self.backgroundTask != .invalid {
-                UIApplication.shared.endBackgroundTask(self.backgroundTask)
-                self.backgroundTask = .invalid
-            }
-        }
-    }
-    
-    private func getCurrentClipboardContent() -> ClipboardContent? {
-        // Try different content types
-        
-        // 1. Images
-        if let image = pasteboard.image {
-            if let imageData = image.pngData() {
-                return ClipboardContent(
-                    content: "Image (\(Int(image.size.width))x\(Int(image.size.height)))",
-                    type: .image,
-                    size: imageData.count,
-                    timestamp: Date(),
-                    sourceDevice: UIDevice.current.name,
-                    imageData: imageData
-                )
-            }
-        }
-        
-        // 2. URLs
-        if let url = pasteboard.url {
-            return ClipboardContent(
-                content: url.absoluteString,
-                type: .url,
-                size: url.absoluteString.utf8.count,
-                timestamp: Date(),
-                sourceDevice: UIDevice.current.name
-            )
-        }
-        
-        // 3. Plain text
-        if let text = pasteboard.string, !text.isEmpty {
-            let type: ClipboardItemType = isURL(text) ? .url : .text
-            return ClipboardContent(
-                content: text,
-                type: type,
-                size: text.utf8.count,
-                timestamp: Date(),
-                sourceDevice: UIDevice.current.name
-            )
-        }
-        
-        return nil
-    }
-    
-    func processNewClipboardContent(_ content: ClipboardContent) {
-        let clipboardItem = ClipboardItem(
-            content: content.content,
-            type: content.type,
-            size: content.size,
-            timestamp: content.timestamp,
-            sourceDevice: content.sourceDevice,
-            imageData: content.imageData
-        )
-        
-        // Add to collections
-        allItems.insert(clipboardItem, at: 0)
-        recentItems.insert(clipboardItem, at: 0)
-        
-        // Maintain size limits
-        if allItems.count > maxHistorySize {
-            allItems.removeLast()
-        }
-        
-        if recentItems.count > 10 {
-            recentItems.removeLast()
-        }
-        
-        // Update counters
-        if !clipboardItem.isRead {
-            unreadCount += 1
-        }
-        totalSyncCount += 1
-        
-        // Save to storage
-        saveHistoryToStorage()
-        
-        // Notify Rust if this is a local change
-        if content.sourceDevice == UIDevice.current.name && !isHandlingRustUpdate {
-            let contentType = determineContentType(content.content, type: content.type)
-            notifyRustOfClipboardChange(content.content, type: contentType)
-        }
-        
-        // Send notification if app is in background
-        if UIApplication.shared.applicationState == .background {
-            sendClipboardNotification(content: content.content)
-        }
-        
-        logger.info("📋 ENHANCED clipboard content processed: \(clipboardItem.type.rawValue)")
-    }
-    
-    private func determineContentType(_ content: String, type: ClipboardItemType) -> ClipboardContentType {
-        switch type {
-        case .url:
-            return .url
-        case .image:
-            return .image
-        default:
-            return .text
-        }
-    }
-    
-    private func isURL(_ text: String) -> Bool {
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        let range = NSRange(location: 0, length: text.utf16.count)
-        return detector?.firstMatch(in: text, options: [], range: range) != nil
-    }
-    
-    private func sendClipboardNotification(content: String) {
-        let notificationContent = UNMutableNotificationContent()
-        notificationContent.title = "Clipboard Updated"
-        notificationContent.body = "New content: \(String(content.prefix(50)))..."
-        notificationContent.sound = .default
-        
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: notificationContent,
-            trigger: nil
-        )
-        
-        UNUserNotificationCenter.current().add(request)
-    }
-    
-    // MARK: - Storage
-    private func saveHistoryToStorage() {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        
-        do {
-            let data = try encoder.encode(allItems)
-            userDefaults.set(data, forKey: historyKey)
-        } catch {
-            logger.error("Failed to save clipboard history: \(error)")
-        }
-    }
-    
-    private func loadStoredHistory() {
-        guard let data = userDefaults.data(forKey: historyKey) else { return }
-        
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        
-        do {
-            allItems = try decoder.decode([ClipboardItem].self, from: data)
-            
-            recentItems = Array(allItems.prefix(10))
-            favoriteItems = allItems.filter { $0.isFavorite }
-            unreadCount = allItems.filter { !$0.isRead }.count
-            
-        } catch {
-            logger.error("Failed to load clipboard history: \(error)")
-        }
-    }
-    
-    private func saveEnhancedStatistics() {
-        let stats = [
-            "totalSyncCount": totalSyncCount,
-            "totalItems": allItems.count,
-            "favoriteItems": favoriteItems.count,
-            "syncSuccessCount": syncSuccessCount,
-            "syncFailureCount": syncFailureCount,
-            "retryQueueSize": syncRetryQueue.count
-        ]
-        userDefaults.set(stats, forKey: statsKey)
-    }
-    
-    private func loadStatistics() {
-        if let stats = userDefaults.dictionary(forKey: statsKey) {
-            totalSyncCount = stats["totalSyncCount"] as? Int ?? 0
-            syncSuccessCount = stats["syncSuccessCount"] as? Int ?? 0
-            syncFailureCount = stats["syncFailureCount"] as? Int ?? 0
-        }
-    }
-    
-    deinit {
-        logger.info("🧹 ENHANCED ClipboardManager deinitializing")
-        clipboardCheckTimer?.invalidate()
+    func cleanup() {
+        stopMonitoring()
+        endBackgroundTask()
         NotificationCenter.default.removeObserver(self)
-        Task {
-            await self.endBackgroundTask()
+    }
+    
+    // FIXED: Remove main actor calls from deinit
+    deinit {
+        monitoringTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+        
+        // FIXED: Use nonisolated cleanup
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
         }
+        
+        logger.info("🧹 ClipboardManager deinitialized")
     }
 }
 
 // MARK: - Supporting Types
-struct ClipboardContent {
-    let content: String
-    let type: ClipboardItemType
-    let size: Int
-    let timestamp: Date
-    let sourceDevice: String
-    let imageData: Data?
+
+struct ClipboardStats {
+    let syncCount: Int
+    let backgroundSyncCount: Int
+    let lastSyncTime: Date?
+    let isMonitoring: Bool
+    let currentContentLength: Int
     
-    init(content: String, type: ClipboardItemType, size: Int, timestamp: Date, sourceDevice: String, imageData: Data? = nil) {
-        self.content = content
-        self.type = type
-        self.size = size
-        self.timestamp = timestamp
-        self.sourceDevice = sourceDevice
-        self.imageData = imageData
+    var description: String {
+        var info = ["=== Clipboard Stats ==="]
+        info.append("Monitoring: \(isMonitoring ? "Active" : "Inactive")")
+        info.append("Sync Count: \(syncCount)")
+        info.append("Background Syncs: \(backgroundSyncCount)")
+        info.append("Content Length: \(currentContentLength) characters")
+        
+        if let lastSync = lastSyncTime {
+            info.append("Last Sync: \(lastSync.formatted(.dateTime))")
+        } else {
+            info.append("Last Sync: Never")
+        }
+        
+        return info.joined(separator: "\n")
     }
 }
