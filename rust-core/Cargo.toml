@@ -55,7 +55,7 @@ sha2 = "0.10"
 mime_guess = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
-
+md5 = "0.7"
 # Compression - pure Rust alternative
 lz4_flex = "0.11"
 
