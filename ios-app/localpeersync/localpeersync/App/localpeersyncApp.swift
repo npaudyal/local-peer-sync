@@ -1,19 +1,24 @@
 //
 //  LocalPeerSyncApp.swift
-//  LocalPeerSync - Simple iOS Version
+//  LocalPeerSync
 //
 
 import SwiftUI
+import UserNotifications
 import os.log
 
 @main
 struct LocalPeerSyncApp: App {
-    private let logger = Logger(subsystem: "com.localpeersync.ios", category: "App")
+    private let logger = Logger(subsystem: "com.nischal.ios.localpeersync", category: "App")
     
     init() {
         logger.info("🚀 LocalPeerSync iOS Starting...")
-        testRustIntegration()
-
+        
+        // Request notification permissions for feedback
+        requestNotificationPermissions()
+        
+        // Initialize widget with current state
+        updateWidgetFromService()
     }
     
     var body: some Scene {
@@ -21,67 +26,110 @@ struct LocalPeerSyncApp: App {
             ContentView()
                 .environmentObject(SyncService.shared)
                 .onAppear {
-                                    // Move the delayed call here
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                        self.testClipboardPermissions()
-                                    }
-                                }
+                    updateWidgetFromService()
+                }
+                .onOpenURL { url in
+                    handleWidgetAction(url)
+                }
         }
     }
     
-    private func testClipboardPermissions() {
-        logger.info("📋 Testing clipboard permissions...")
+    // MARK: - Widget Integration
+    
+    private func handleWidgetAction(_ url: URL) {
+        guard url.scheme == "localpeersync" else { return }
         
-        let testText = "Permission test \(Date().timeIntervalSince1970)"
+        switch url.host {
+        case "toggle":
+            toggleSyncService()
+        default:
+            logger.warning("⚠️ Unknown widget action: \(url)")
+        }
+    }
+    
+    private func toggleSyncService() {
+        let syncService = SyncService.shared
         
-        // Test direct access
-        UIPasteboard.general.string = testText
+        logger.info("🔄 Widget toggle requested - Current state: \(syncService.isRunning)")
         
-        if UIPasteboard.general.string == testText {
-            logger.info("✅ Clipboard permissions - GRANTED")
+        if syncService.isRunning {
+            // Turn OFF
+            syncService.stopSync()
+            logger.info("🛑 Service stopped via widget")
             
-            // Test our bridge function
-            let cString = testText.cString(using: .utf8)!
-            let result = ios_set_clipboard_text(cString)
+            // Update widget
+            SimpleWidgetManager.shared.updateServiceStatus(
+                isRunning: false,
+                deviceCount: 0,
+                deviceName: syncService.deviceName
+            )
             
-            if result == 1 {
-                logger.info("✅ Clipboard bridge function - WORKING")
-            } else {
-                logger.error("❌ Clipboard bridge function - FAILED")
+            // User feedback
+            showToggleFeedback(message: "LocalPeerSync stopped", isOn: false)
+            
+        } else {
+            // Turn ON
+            syncService.startSync()
+            logger.info("▶️ Service started via widget")
+            
+            // Update widget immediately, then again after connection
+            SimpleWidgetManager.shared.updateServiceStatus(
+                isRunning: true,
+                deviceCount: 0, // Will update when devices connect
+                deviceName: syncService.deviceName
+            )
+            
+            // User feedback
+            showToggleFeedback(message: "LocalPeerSync started", isOn: true)
+            
+            // Update widget with device count after a delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self.updateWidgetFromService()
             }
-        } else {
-            logger.error("❌ Clipboard permissions - DENIED")
         }
     }
     
-    private func testRustIntegration() {
-        logger.info("🧪 Testing Rust integration...")
+    private func updateWidgetFromService() {
+        let syncService = SyncService.shared
         
-        let result = rust_test_connection()
-        if result == 42 {
-            logger.info("✅ Rust integration test PASSED!")
-        } else {
-            logger.error("❌ Rust integration test FAILED!")
-        }
+        SimpleWidgetManager.shared.updateServiceStatus(
+            isRunning: syncService.isRunning,
+            deviceCount: syncService.peers.count,
+            deviceName: syncService.deviceName
+        )
+        
+        logger.info("📱 Widget updated: Running=\(syncService.isRunning), Devices=\(syncService.peers.count)")
     }
     
-    private func requestClipboardPermissions() {
-        logger.info("📋 Requesting clipboard permissions...")
+    private func showToggleFeedback(message: String, isOn: Bool) {
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: isOn ? .heavy : .light)
+        impactFeedback.impactOccurred()
         
-        // Request clipboard access by doing a test operation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let testString = "permission_request_\(Int.random(in: 1000...9999))"
-            UIPasteboard.general.string = testString
-            
-            if UIPasteboard.general.string == testString {
-                self.logger.info("✅ Clipboard permissions granted")
+        // Brief local notification
+        let content = UNMutableNotificationContent()
+        content.title = "LocalPeerSync"
+        content.body = message
+        content.sound = nil // Silent
+        
+        let request = UNNotificationRequest(
+            identifier: "toggle_\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request)
+        
+        logger.info("📢 Toggle feedback: \(message)")
+    }
+    
+    private func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge]) { granted, error in
+            if granted {
+                self.logger.info("✅ Notification permissions granted")
             } else {
-                self.logger.error("❌ Clipboard permissions denied")
+                self.logger.info("❌ Notification permissions denied")
             }
         }
     }
 }
-
-// Import test functions from Rust
-@_silgen_name("test_rust_connection")
-func rust_test_connection() -> Int32

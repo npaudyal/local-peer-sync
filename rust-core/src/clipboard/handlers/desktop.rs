@@ -1,315 +1,196 @@
-//! Desktop clipboard handler using arboard
+//! Desktop clipboard handler - cross-platform implementation
 use crate::clipboard::{sync_engine::ClipboardHandler, types::*};
 use crate::{Result, SyncError};
-use std::collections::HashMap;
-use tracing::{info, warn};
+use arboard::Clipboard;
+use std::sync::Mutex;
+use tracing::{debug, error, info, warn};
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-use arboard::{Clipboard, ImageData};
-
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-use image::{ImageBuffer, ImageOutputFormat, Rgba};
-
-#[cfg(target_os = "linux")]
-use arboard::{GetExtLinux, SetExtLinux};
-
+/// Desktop clipboard handler using arboard
 pub struct DesktopClipboardHandler {
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    clipboard: Clipboard,
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-    _phantom: std::marker::PhantomData<()>,
+    clipboard: Mutex<Clipboard>,
+    device_id: String,
 }
 
 impl DesktopClipboardHandler {
     pub fn new() -> Result<Self> {
-        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-        {
-            let clipboard = Clipboard::new().map_err(|e| {
-                SyncError::Unknown(format!("Failed to access system clipboard: {}", e))
-            })?;
+        let clipboard = Clipboard::new()
+            .map_err(|e| SyncError::Unknown(format!("Failed to initialize clipboard: {}", e)))?;
 
-            Ok(Self { clipboard })
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            Err(SyncError::Unknown(
-                "Desktop clipboard not supported on this platform".to_string(),
-            ))
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    async fn try_read_rich_text(&mut self) -> Result<ClipboardItem> {
-        // Try HTML first
-        #[cfg(target_os = "linux")]
-        let html = self.clipboard.get().html().ok();
-        #[cfg(not(target_os = "linux"))]
-        let html: Option<String> = None;
-
-        // Get plain text fallback
-        let plain_text = self.clipboard.get_text().unwrap_or_default();
-
-        if html.is_some() || !plain_text.is_empty() {
-            let content = ClipboardContent::RichText {
-                plain_text,
-                html,
-                rtf: None,
-            };
-            Ok(ClipboardItem::new(content, "local".to_string()))
-        } else {
-            Err(SyncError::Unknown("No rich text content".to_string()))
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    async fn try_read_image(&mut self, config: &ClipboardConfig) -> Result<ClipboardItem> {
-        if let Ok(image_data) = self.clipboard.get_image() {
-            let mut alternatives = HashMap::new();
-            let png_data = Self::convert_image_to_format(&image_data, ImageFormat::Png)?;
-
-            if let Ok(jpeg_data) = Self::convert_image_to_format(&image_data, ImageFormat::Jpeg) {
-                alternatives.insert(ImageFormat::Jpeg, jpeg_data);
-            }
-
-            if png_data.len() > config.max_content_size {
-                return Err(SyncError::Unknown("Image too large".to_string()));
-            }
-
-            let content = ClipboardContent::Image {
-                primary_data: png_data,
-                primary_format: ImageFormat::Png,
-                alternatives,
-                width: image_data.width as u32,
-                height: image_data.height as u32,
-            };
-
-            Ok(ClipboardItem::new(content, "local".to_string()))
-        } else {
-            Err(SyncError::Unknown("No image content".to_string()))
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    async fn try_read_url(&mut self) -> Result<ClipboardItem> {
-        if let Ok(text) = self.clipboard.get_text() {
-            if Self::is_url(&text) {
-                let content = ClipboardContent::Url {
-                    url: text,
-                    title: None,
-                    description: None,
-                };
-                return Ok(ClipboardItem::new(content, "local".to_string()));
-            }
-        }
-        Err(SyncError::Unknown("No URL content".to_string()))
-    }
-
-    fn is_url(text: &str) -> bool {
-        text.starts_with("http://")
-            || text.starts_with("https://")
-            || text.starts_with("ftp://")
-            || text.starts_with("file://")
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    fn convert_image_to_format(image_data: &ImageData, format: ImageFormat) -> Result<Vec<u8>> {
-        let img_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(
-            image_data.width as u32,
-            image_data.height as u32,
-            image_data.bytes.to_vec(),
-        )
-        .ok_or_else(|| SyncError::Unknown("Failed to create image buffer".to_string()))?;
-
-        let mut output = Vec::new();
-        let output_format = match format {
-            ImageFormat::Png => ImageOutputFormat::Png,
-            ImageFormat::Jpeg => ImageOutputFormat::Jpeg(85),
-            ImageFormat::Gif => ImageOutputFormat::Gif,
-            ImageFormat::Webp => {
-                return Err(SyncError::Unknown("WebP not supported yet".to_string()))
-            }
-            ImageFormat::Bmp => ImageOutputFormat::Bmp,
-            ImageFormat::Tiff => ImageOutputFormat::Tiff,
-        };
-
-        img_buffer
-            .write_to(&mut std::io::Cursor::new(&mut output), output_format)
-            .map_err(|e| SyncError::Unknown(format!("Failed to encode image: {}", e)))?;
-
-        Ok(output)
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    fn convert_to_image_data(data: Vec<u8>, width: u32, height: u32) -> Result<ImageData<'static>> {
-        let img = image::load_from_memory(&data)
-            .map_err(|e| SyncError::Unknown(format!("Failed to decode image: {}", e)))?;
-
-        let rgba_img = img.to_rgba8();
-
-        Ok(ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: rgba_img.into_raw().into(),
+        Ok(Self {
+            clipboard: Mutex::new(clipboard),
+            device_id: "desktop_device".to_string(),
         })
-    }
-
-    fn truncate_for_log(text: &str, max_len: usize) -> String {
-        if text.len() > max_len {
-            format!("{}...", &text[..max_len])
-        } else {
-            text.to_string()
-        }
     }
 }
 
 #[async_trait::async_trait]
 impl ClipboardHandler for DesktopClipboardHandler {
-    async fn read_content(&mut self, config: &ClipboardConfig) -> Result<Option<ClipboardItem>> {
-        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-        {
-            if config.sync_rich_text {
-                if let Ok(content) = self.try_read_rich_text().await {
-                    return Ok(Some(content));
-                }
+    async fn read_content(&mut self, _config: &ClipboardConfig) -> Result<Option<ClipboardItem>> {
+        let clipboard_text = {
+            let mut clipboard = self.clipboard.lock().unwrap();
+            match clipboard.get_text() {
+                Ok(text) => text,
+                Err(_) => return Ok(None), // No text content or clipboard empty
             }
+        };
 
-            if config.sync_images {
-                if let Ok(content) = self.try_read_image(config).await {
-                    return Ok(Some(content));
-                }
-            }
-
-            if let Ok(text) = self.clipboard.get_text() {
-                if !text.trim().is_empty() && text.len() <= config.max_content_size {
-                    let content = ClipboardContent::Text {
-                        content: text,
-                        encoding: "UTF-8".to_string(),
-                    };
-                    return Ok(Some(ClipboardItem::new(content, "local".to_string())));
-                }
-            }
-
-            if let Ok(content) = self.try_read_url().await {
-                return Ok(Some(content));
-            }
-
-            Ok(None)
+        if clipboard_text.trim().is_empty() {
+            return Ok(None);
         }
 
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            Err(SyncError::Unknown(
-                "Desktop clipboard not supported".to_string(),
-            ))
-        }
+        debug!("Read clipboard text: {} chars", clipboard_text.len());
+
+        let clipboard_content = ClipboardContent::Text {
+            content: clipboard_text,
+            encoding: "UTF-8".to_string(),
+        };
+
+        Ok(Some(ClipboardItem::new(
+            clipboard_content,
+            self.device_id.clone(),
+        )))
     }
 
     async fn write_content(&mut self, item: &ClipboardItem) -> Result<()> {
-        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-        {
-            match &item.content {
-                ClipboardContent::Text { content, .. } => {
-                    self.clipboard
-                        .set_text(content)
-                        .map_err(|e| SyncError::Unknown(format!("Failed to set text: {}", e)))?;
-                    info!(
-                        "📋 ✅ Set desktop clipboard text from {}: {}",
-                        item.source_device,
-                        Self::truncate_for_log(content, 50)
-                    );
+        match &item.content {
+            ClipboardContent::Text { content, .. } => {
+                let mut clipboard = self.clipboard.lock().unwrap();
+                if let Err(e) = clipboard.set_text(content) {
+                    error!("Failed to set clipboard text: {}", e);
+                    return Err(SyncError::Unknown(format!("Clipboard error: {}", e)));
                 }
+                info!("📋 Set clipboard text: {} chars", content.len());
+                Ok(())
+            }
+            ClipboardContent::RichText { plain_text, .. } => {
+                // For now, just set the plain text part
+                let mut clipboard = self.clipboard.lock().unwrap();
+                if let Err(e) = clipboard.set_text(plain_text) {
+                    error!("Failed to set clipboard rich text: {}", e);
+                    return Err(SyncError::Unknown(format!("Clipboard error: {}", e)));
+                }
+                info!("📋 Set clipboard rich text: {} chars", plain_text.len());
+                Ok(())
+            }
+            ClipboardContent::Files { paths, .. } => {
+                // Convert file paths to clipboard-compatible format
+                let path_strings: Vec<String> = paths.iter().map(|f| f.path.clone()).collect();
+                let paths_text = path_strings.join("\n");
 
-                ClipboardContent::RichText {
-                    plain_text,
-                    #[cfg(target_os = "linux")]
-                    html,
-                    #[cfg(not(target_os = "linux"))]
-                        html: _,
-                    ..
-                } => {
-                    #[cfg(target_os = "linux")]
-                    {
-                        if let Some(html_content) = html {
-                            if let Err(e) = self.clipboard.set().html(html_content) {
-                                warn!("Failed to set HTML, falling back to plain text: {}", e);
-                                self.clipboard.set_text(plain_text).map_err(|e| {
-                                    SyncError::Unknown(format!("Failed to set plain text: {}", e))
-                                })?;
-                            }
+                let mut clipboard = self.clipboard.lock().unwrap();
+                if let Err(e) = clipboard.set_text(&paths_text) {
+                    error!("Failed to set clipboard file paths: {}", e);
+                    return Err(SyncError::Unknown(format!("Clipboard error: {}", e)));
+                }
+                info!("📋 Set clipboard file paths: {} files", paths.len());
+                Ok(())
+            }
+            ClipboardContent::FileTransfer {
+                files, transfer_id, ..
+            } => {
+                info!(
+                    "📁 Receiving file transfer: {} files (ID: {})",
+                    files.len(),
+                    transfer_id
+                );
+
+                // Create a minimal file transfer manager for this operation
+                let transfer_config = crate::file_transfer::types::TransferConfig::default();
+                let mut file_manager =
+                    crate::file_transfer::manager::FileTransferManager::new(transfer_config)?;
+
+                // Create a transfer package
+                let package = crate::file_transfer::types::FileTransferPackage {
+                    transfer_id: transfer_id.clone(),
+                    source_device_id: item.source_device.clone(),
+                    files: files.clone(),
+                    total_size: files.iter().map(|f| f.size).sum(),
+                    compression_ratio: 1.0,
+                    created_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    expires_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        + 86400, // 24 hours
+                    metadata: crate::file_transfer::types::TransferMetadata {
+                        title: Some(format!("{} files from {}", files.len(), item.source_device)),
+                        description: None,
+                        priority: crate::file_transfer::types::TransferPriority::Normal,
+                        estimated_duration: 60,
+                        bandwidth_limit: None,
+                        auto_cleanup: true,
+                    },
+                };
+
+                // Receive and reconstruct files
+                match file_manager.receive_files(package).await {
+                    Ok(written_paths) => {
+                        info!(
+                            "✅ Files received successfully: {} files",
+                            written_paths.len()
+                        );
+
+                        // Set the file paths as text for now (could be enhanced to set as actual file references)
+                        let paths_text: String = written_paths
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        let mut clipboard = self.clipboard.lock().unwrap();
+                        if let Err(e) = clipboard.set_text(&paths_text) {
+                            error!("Failed to set received file paths to clipboard: {}", e);
                         } else {
-                            self.clipboard.set_text(plain_text).map_err(|e| {
-                                SyncError::Unknown(format!("Failed to set plain text: {}", e))
-                            })?;
+                            info!("📋 File paths set to clipboard for pasting");
                         }
                     }
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        self.clipboard.set_text(plain_text).map_err(|e| {
-                            SyncError::Unknown(format!("Failed to set text: {}", e))
-                        })?;
+                    Err(e) => {
+                        error!("Failed to receive files: {}", e);
+                        return Err(e);
                     }
                 }
-
-                ClipboardContent::Image {
-                    primary_data,
-                    width,
-                    height,
-                    ..
-                } => {
-                    let image_data =
-                        Self::convert_to_image_data(primary_data.clone(), *width, *height)?;
-                    self.clipboard
-                        .set_image(image_data)
-                        .map_err(|e| SyncError::Unknown(format!("Failed to set image: {}", e)))?;
-                }
-
-                ClipboardContent::Files { paths, .. } => {
-                    let paths_text = paths
-                        .iter()
-                        .map(|f| f.path.clone())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    self.clipboard.set_text(&paths_text).map_err(|e| {
-                        SyncError::Unknown(format!("Failed to set file paths as text: {}", e))
-                    })?;
-                }
-
-                ClipboardContent::Binary { .. } => {
-                    warn!("Binary clipboard content not supported for desktop setting");
-                }
-
-                ClipboardContent::Url { url, .. } => {
-                    self.clipboard
-                        .set_text(url)
-                        .map_err(|e| SyncError::Unknown(format!("Failed to set URL: {}", e)))?;
-                }
+                Ok(())
             }
-
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            Err(SyncError::Unknown(
-                "Desktop clipboard not supported".to_string(),
-            ))
+            ClipboardContent::Url { url, .. } => {
+                let mut clipboard = self.clipboard.lock().unwrap();
+                if let Err(e) = clipboard.set_text(url) {
+                    error!("Failed to set clipboard URL: {}", e);
+                    return Err(SyncError::Unknown(format!("Clipboard error: {}", e)));
+                }
+                info!("📋 Set clipboard URL: {}", url);
+                Ok(())
+            }
+            ClipboardContent::Image { .. } => {
+                warn!("Image clipboard content not yet supported on desktop");
+                Err(SyncError::Unknown(
+                    "Image content not supported".to_string(),
+                ))
+            }
+            ClipboardContent::Binary { .. } => {
+                warn!("Binary clipboard content not yet supported on desktop");
+                Err(SyncError::Unknown(
+                    "Binary content not supported".to_string(),
+                ))
+            }
         }
     }
 
     async fn is_available(&self) -> bool {
-        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-        {
-            true
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            false
-        }
+        true
     }
 
     fn get_platform_name(&self) -> &'static str {
-        "Desktop"
+        if cfg!(target_os = "windows") {
+            "Windows"
+        } else if cfg!(target_os = "macos") {
+            "macOS"
+        } else if cfg!(target_os = "linux") {
+            "Linux"
+        } else {
+            "Desktop"
+        }
     }
 }

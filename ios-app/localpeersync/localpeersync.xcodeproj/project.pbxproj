@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F731FD622DEF4A6B00893DF4 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F731FD612DEF4A6B00893DF4 /* WidgetKit.framework */; };
+		F731FD642DEF4A6B00893DF4 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F731FD632DEF4A6B00893DF4 /* SwiftUI.framework */; };
+		F731FD762DEF4A6D00893DF4 /* localpeersyncwidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F731FD602DEF4A6B00893DF4 /* localpeersyncwidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		F731FD732DEF4A6D00893DF4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F75E27CD2DE9542F005350EC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F731FD5F2DEF4A6B00893DF4;
+			remoteInfo = localpeersyncwidgetExtension;
+		};
 		F75E27E32DE95432005350EC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = F75E27CD2DE9542F005350EC /* Project object */;
@@ -23,7 +36,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		F731FD752DEF4A6D00893DF4 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F731FD762DEF4A6D00893DF4 /* localpeersyncwidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		F731FD602DEF4A6B00893DF4 /* localpeersyncwidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = localpeersyncwidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F731FD612DEF4A6B00893DF4 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		F731FD632DEF4A6B00893DF4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		F731FD852DEF4C2500893DF4 /* localpeersyncwidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = localpeersyncwidgetExtension.entitlements; sourceTree = "<group>"; };
 		F75E27D52DE9542F005350EC /* localpeersync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = localpeersync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F75E27E22DE95432005350EC /* localpeersyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = localpeersyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F75E27EC2DE95432005350EC /* localpeersyncUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = localpeersyncUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -37,13 +68,36 @@
 			);
 			target = F75E27D42DE9542F005350EC /* localpeersync */;
 		};
+		F731FD7A2DEF4A6D00893DF4 /* Exceptions for "localpeersyncwidget" folder in "localpeersyncwidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F731FD5F2DEF4A6B00893DF4 /* localpeersyncwidgetExtension */;
+		};
+		F731FD8E2DEF704600893DF4 /* Exceptions for "localpeersync" folder in "localpeersyncwidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/SimpleWidgetData.swift,
+			);
+			target = F731FD5F2DEF4A6B00893DF4 /* localpeersyncwidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		F731FD652DEF4A6B00893DF4 /* localpeersyncwidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F731FD7A2DEF4A6D00893DF4 /* Exceptions for "localpeersyncwidget" folder in "localpeersyncwidgetExtension" target */,
+			);
+			path = localpeersyncwidget;
+			sourceTree = "<group>";
+		};
 		F75E27D72DE9542F005350EC /* localpeersync */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				F731FC2E2DE95AC500893DF4 /* Exceptions for "localpeersync" folder in "localpeersync" target */,
+				F731FD8E2DEF704600893DF4 /* Exceptions for "localpeersync" folder in "localpeersyncwidgetExtension" target */,
 			);
 			path = localpeersync;
 			sourceTree = "<group>";
@@ -51,6 +105,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		F731FD5D2DEF4A6B00893DF4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F731FD642DEF4A6B00893DF4 /* SwiftUI.framework in Frameworks */,
+				F731FD622DEF4A6B00893DF4 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F75E27D22DE9542F005350EC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -78,6 +141,8 @@
 		F731FCE42DEA634B00893DF4 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				F731FD612DEF4A6B00893DF4 /* WidgetKit.framework */,
+				F731FD632DEF4A6B00893DF4 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -85,7 +150,9 @@
 		F75E27CC2DE9542F005350EC = {
 			isa = PBXGroup;
 			children = (
+				F731FD852DEF4C2500893DF4 /* localpeersyncwidgetExtension.entitlements */,
 				F75E27D72DE9542F005350EC /* localpeersync */,
+				F731FD652DEF4A6B00893DF4 /* localpeersyncwidget */,
 				F731FCE42DEA634B00893DF4 /* Frameworks */,
 				F75E27D62DE9542F005350EC /* Products */,
 			);
@@ -97,6 +164,7 @@
 				F75E27D52DE9542F005350EC /* localpeersync.app */,
 				F75E27E22DE95432005350EC /* localpeersyncTests.xctest */,
 				F75E27EC2DE95432005350EC /* localpeersyncUITests.xctest */,
+				F731FD602DEF4A6B00893DF4 /* localpeersyncwidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -104,6 +172,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		F731FD5F2DEF4A6B00893DF4 /* localpeersyncwidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F731FD792DEF4A6D00893DF4 /* Build configuration list for PBXNativeTarget "localpeersyncwidgetExtension" */;
+			buildPhases = (
+				F731FD5C2DEF4A6B00893DF4 /* Sources */,
+				F731FD5D2DEF4A6B00893DF4 /* Frameworks */,
+				F731FD5E2DEF4A6B00893DF4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F731FD652DEF4A6B00893DF4 /* localpeersyncwidget */,
+			);
+			name = localpeersyncwidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = localpeersyncwidgetExtension;
+			productReference = F731FD602DEF4A6B00893DF4 /* localpeersyncwidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		F75E27D42DE9542F005350EC /* localpeersync */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F75E27F62DE95432005350EC /* Build configuration list for PBXNativeTarget "localpeersync" */;
@@ -111,10 +201,12 @@
 				F75E27D12DE9542F005350EC /* Sources */,
 				F75E27D22DE9542F005350EC /* Frameworks */,
 				F75E27D32DE9542F005350EC /* Resources */,
+				F731FD752DEF4A6D00893DF4 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F731FD742DEF4A6D00893DF4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				F75E27D72DE9542F005350EC /* localpeersync */,
@@ -176,6 +268,9 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					F731FD5F2DEF4A6B00893DF4 = {
+						CreatedOnToolsVersion = 16.4;
+					};
 					F75E27D42DE9542F005350EC = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -206,11 +301,19 @@
 				F75E27D42DE9542F005350EC /* localpeersync */,
 				F75E27E12DE95432005350EC /* localpeersyncTests */,
 				F75E27EB2DE95432005350EC /* localpeersyncUITests */,
+				F731FD5F2DEF4A6B00893DF4 /* localpeersyncwidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		F731FD5E2DEF4A6B00893DF4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F75E27D32DE9542F005350EC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -235,6 +338,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		F731FD5C2DEF4A6B00893DF4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F75E27D12DE9542F005350EC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -259,6 +369,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		F731FD742DEF4A6D00893DF4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F731FD5F2DEF4A6B00893DF4 /* localpeersyncwidgetExtension */;
+			targetProxy = F731FD732DEF4A6D00893DF4 /* PBXContainerItemProxy */;
+		};
 		F75E27E42DE95432005350EC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F75E27D42DE9542F005350EC /* localpeersync */;
@@ -272,6 +387,66 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		F731FD772DEF4A6D00893DF4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = localpeersyncwidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G937MKQMYG;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = localpeersyncwidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = localpeersyncwidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.ios.localpeersync.localpeersyncwidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F731FD782DEF4A6D00893DF4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = localpeersyncwidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G937MKQMYG;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = localpeersyncwidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = localpeersyncwidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.ios.localpeersync.localpeersyncwidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		F75E27F42DE95432005350EC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -399,6 +574,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = localpeersync/localpeersync.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G937MKQMYG;
@@ -428,6 +604,7 @@
 				NEW_SETTING1 = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.ios.localpeersync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -440,6 +617,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = localpeersync/localpeersync.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G937MKQMYG;
@@ -470,6 +648,7 @@
 				NEW_SETTING1 = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nischal.ios.localpeersync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -551,6 +730,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		F731FD792DEF4A6D00893DF4 /* Build configuration list for PBXNativeTarget "localpeersyncwidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F731FD772DEF4A6D00893DF4 /* Debug */,
+				F731FD782DEF4A6D00893DF4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F75E27D02DE9542F005350EC /* Build configuration list for PBXProject "localpeersync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

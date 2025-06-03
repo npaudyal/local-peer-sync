@@ -53,10 +53,17 @@ pub enum ClipboardContent {
         height: u32,
     },
 
-    /// File paths and metadata
+    /// File paths and metadata (basic - for legacy support)
     Files {
         paths: Vec<FileItem>,
         total_size: u64,
+    },
+
+    /// 🆕 Advanced file transfer with full content
+    FileTransfer {
+        files: Vec<crate::file_transfer::types::TransferableFile>,
+        total_size: u64,
+        transfer_id: String,
     },
 
     /// Binary data with MIME type detection
@@ -228,6 +235,10 @@ impl ClipboardItem {
                     hasher.update(file.path.as_bytes());
                 }
             }
+            ClipboardContent::FileTransfer { transfer_id, .. } => {
+                hasher.update(b"FILETRANSFER");
+                hasher.update(transfer_id.as_bytes());
+            }
             ClipboardContent::Binary {
                 data, mime_type, ..
             } => {
@@ -284,6 +295,18 @@ impl ClipboardItem {
             ClipboardContent::Files { paths, total_size } => {
                 format!("Files: {} items ({} bytes)", paths.len(), total_size)
             }
+            ClipboardContent::FileTransfer {
+                files,
+                total_size,
+                transfer_id,
+            } => {
+                format!(
+                    "File Transfer: {} files ({} bytes) [{}]",
+                    files.len(),
+                    total_size,
+                    &transfer_id[..8] // Show first 8 chars of transfer ID
+                )
+            }
             ClipboardContent::Binary { mime_type, .. } => {
                 format!("Binary: {}", mime_type)
             }
@@ -314,6 +337,7 @@ impl ClipboardMetadata {
                 ..
             } => primary_data.len() + alternatives.values().map(|v| v.len()).sum::<usize>(),
             ClipboardContent::Files { total_size, .. } => *total_size as usize,
+            ClipboardContent::FileTransfer { total_size, .. } => *total_size as usize,
             ClipboardContent::Binary { data, .. } => data.len(),
             ClipboardContent::Url {
                 url,

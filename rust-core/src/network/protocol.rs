@@ -66,6 +66,9 @@ pub enum SyncPayload {
     /// Multiple clipboard items (history)
     ClipboardHistory(Vec<ClipboardItem>),
 
+    /// 🆕 File transfer payload
+    FileTransfer(crate::file_transfer::types::FileTransferPackage),
+
     /// Device information
     DeviceInfo {
         name: String,
@@ -91,6 +94,7 @@ impl SyncPayload {
             SyncPayload::ClipboardHistory(items) => {
                 items.iter().map(|item| item.content_size()).sum()
             }
+            SyncPayload::FileTransfer(package) => package.total_size as usize,
             SyncPayload::DeviceInfo {
                 name,
                 platform,
@@ -142,6 +146,26 @@ impl SyncMessage {
         }
     }
 
+    /// 🆕 Create a file transfer message
+    pub fn new_file_transfer(
+        source_device_id: String,
+        package: crate::file_transfer::types::FileTransferPackage,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            message_type: MessageType::ClipboardSync,
+            source_device_id,
+            target_device_id: None,
+            payload: SyncPayload::FileTransfer(package),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            version: 2,
+            priority: 90, // Very high priority for file transfers
+        }
+    }
+
     /// Create a discovery message
     pub fn new_discovery(source_device_id: String, device_name: String) -> Self {
         let platform = if cfg!(target_os = "windows") {
@@ -168,6 +192,7 @@ impl SyncMessage {
                     "images".to_string(),
                     "rich_text".to_string(),
                     "compression".to_string(),
+                    "file_transfer".to_string(), // 🆕 NEW capability
                 ],
             },
             timestamp: SystemTime::now()

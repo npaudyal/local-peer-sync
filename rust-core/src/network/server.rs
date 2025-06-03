@@ -9,6 +9,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
+
 /// TCP server for handling peer connections
 pub struct PeerServer {
     config: SyncConfig,
@@ -16,6 +17,7 @@ pub struct PeerServer {
     server_handle: Option<JoinHandle<()>>,
     clipboard_engine: Option<Arc<ClipboardSyncEngine>>,
 }
+
 impl PeerServer {
     /// Create a new peer server
     pub fn new(config: SyncConfig) -> Self {
@@ -26,6 +28,7 @@ impl PeerServer {
             clipboard_engine: None,
         }
     }
+
     /// Set the clipboard engine for processing received clipboard data
     pub fn set_clipboard_engine(&mut self, engine: Arc<ClipboardSyncEngine>) {
         self.clipboard_engine = Some(engine);
@@ -311,6 +314,42 @@ impl PeerServer {
                             }
                         }
                         format!("ClipboardItem: {}", item.summary())
+                    }
+                    SyncPayload::FileTransfer(package) => {
+                        info!(
+                            "📁 Processing file transfer package: {} files",
+                            package.files.len()
+                        );
+
+                        // Create a clipboard item with file transfer content
+                        let clipboard_item = ClipboardItem::new(
+                            ClipboardContent::FileTransfer {
+                                files: package.files.clone(),
+                                total_size: package.total_size,
+                                transfer_id: package.transfer_id.clone(),
+                            },
+                            message.source_device_id.clone(),
+                        );
+
+                        info!("🔄 Attempting to set file transfer content...");
+                        match engine.set_clipboard_content(clipboard_item).await {
+                            Ok(()) => {
+                                info!(
+                                    "📋 ✅ Successfully processed file transfer from {}: {} files",
+                                    message.source_device_id,
+                                    package.files.len()
+                                );
+                            }
+                            Err(e) => {
+                                error!("📋 ❌ Failed to process file transfer: {}", e);
+                            }
+                        }
+
+                        format!(
+                            "FileTransfer: {} files ({} bytes)",
+                            package.files.len(),
+                            package.total_size
+                        )
                     }
                     _ => {
                         warn!("❓ Unknown payload type in clipboard sync message");

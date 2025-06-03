@@ -28,6 +28,15 @@ impl IOSClipboardHandler {
                 .map(|f| f.path.clone())
                 .collect::<Vec<_>>()
                 .join("\n"),
+            ClipboardContent::FileTransfer {
+                files, transfer_id, ..
+            } => {
+                format!(
+                    "File Transfer: {} files (ID: {})",
+                    files.len(),
+                    &transfer_id[..8]
+                )
+            }
             ClipboardContent::Image { width, height, .. } => {
                 format!("Image ({}x{})", width, height)
             }
@@ -107,7 +116,32 @@ impl ClipboardHandler for IOSClipboardHandler {
                         ))
                     }
                 }
+                ClipboardContent::FileTransfer {
+                    files, transfer_id, ..
+                } => {
+                    warn!("📱 iOS file transfer received but not yet fully implemented");
 
+                    // For now, just set a summary as text
+                    let summary = format!(
+                        "Received {} files (Transfer: {})",
+                        files.len(),
+                        &transfer_id[..8]
+                    );
+                    let c_content = CString::new(summary.as_str()).map_err(|e| {
+                        SyncError::Unknown(format!("Invalid summary content: {}", e))
+                    })?;
+
+                    let success = unsafe { ios_set_clipboard_text(c_content.as_ptr()) };
+
+                    if success == 1 {
+                        info!("📱 Set iOS clipboard file transfer summary");
+                        Ok(())
+                    } else {
+                        Err(SyncError::Unknown(
+                            "Failed to set iOS clipboard file transfer summary".to_string(),
+                        ))
+                    }
+                }
                 _ => {
                     warn!("📱 iOS clipboard: Unsupported content type, converting to text");
                     let text_content = self.content_to_text(item);

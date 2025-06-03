@@ -1,3 +1,4 @@
+// lib.rs
 //! Local Peer Sync - Core Library
 //!
 //! High-performance, secure clipboard synchronization across devices
@@ -8,14 +9,16 @@ pub mod config;
 pub mod crypto;
 pub mod error;
 pub mod ffi;
+pub mod file_transfer;
 pub mod network;
-pub mod storage;
+pub mod storage; // 🆕 ADD THIS LINE
 
 // Re-export main types for easier usage
 pub use clipboard::ClipboardSyncEngine;
 pub use config::SyncConfig;
 pub use error::{Result, SyncError};
-pub use network::SyncManager;
+pub use file_transfer::FileTransferManager;
+pub use network::SyncManager; // 🆕 ADD THIS LINE
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -117,26 +120,11 @@ impl LocalPeerSync {
     }
 }
 
-// 🆕 COMPLETE: Export ALL FFI functions including new peer bridging functions
+// Export ALL FFI functions including new peer bridging functions
 pub use ffi::c_api::{
-    clipboard_content_changed,
-    get_clipboard_history_count,
-    sync_add_discovered_peer, // 🆕 NEW
-    sync_cleanup,
-    sync_clipboard,
-    sync_clipboard_enhanced,
-    sync_free_string,
-    sync_get_device_id,
-    sync_get_device_name,
-    sync_get_health_status,
-    sync_get_peer_count,
-    sync_get_peers_json,
-    sync_get_trusted_peer_count, // 🆕 NEW
-    sync_init,
-    sync_is_running,
-    sync_remove_peer, // 🆕 NEW
-    sync_start,
-    sync_stop,
-    test_rust_connection,
-    test_rust_string,
+    clipboard_content_changed, get_clipboard_history_count, sync_add_discovered_peer, sync_cleanup,
+    sync_clipboard, sync_clipboard_enhanced, sync_free_string, sync_get_device_id,
+    sync_get_device_name, sync_get_health_status, sync_get_peer_count, sync_get_peers_json,
+    sync_get_trusted_peer_count, sync_init, sync_is_running, sync_remove_peer, sync_start,
+    sync_stop, test_rust_connection, test_rust_string,
 };

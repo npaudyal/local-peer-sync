@@ -96,6 +96,7 @@ class SyncService: ObservableObject {
                 self.isRunning = true
                 self.statusText = "Running"
             }
+            notifyWidgetOfStatusChange()
             logger.info("✅ Sync service started successfully")
         } else {
             logger.error("❌ Failed to start sync service")
@@ -123,10 +124,19 @@ class SyncService: ObservableObject {
                 self.statusText = "Stopped"
                 self.peers = []
             }
+            notifyWidgetOfStatusChange()
             logger.info("✅ Sync service stopped successfully")
         } else {
             logger.error("❌ Failed to stop sync service")
         }
+    }
+    
+    private func notifyWidgetOfStatusChange() {
+        SimpleWidgetManager.shared.updateServiceStatus(
+            isRunning: isRunning,
+            deviceCount: peers.count,
+            deviceName: deviceName
+        )
     }
     
     // Update syncClipboard method in SyncService.swift
@@ -295,6 +305,8 @@ class SyncService: ObservableObject {
             // Debug logging
             self.logger.info("📊 Status Update: UI Peers: \(self.peers.count), Rust Peers: \(peerCount), Trusted: \(trustedPeerCount)")
         }
+        notifyWidgetOfStatusChange()
+
     }
     
     

@@ -1,106 +1,171 @@
 //
 //  ContentView.swift
-//  LocalPeerSync - Simple iOS Version
+//  LocalPeerSync
 //
 
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var syncService: SyncService
-    @State private var showingAlert = false
-    @State private var alertMessage = ""
+    @State private var showingAbout = false
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 20) {
-                    // Status Card
-                    StatusCard()
+                VStack(spacing: 24) {
+                    // Header
+                    HeaderSection()
                     
-                    // Current Clipboard
-                    ClipboardCard()
+                    // Quick Status
+                    StatusSection()
                     
-                    // Devices List
-                    DevicesSection()
+                    // Control Center Instructions
+                    ControlCenterSection()
                     
-                    // Controls
-                    ControlsSection()
+                    // Device List
+                    if syncService.isRunning {
+                        DevicesSection()
+                    }
+                    
+                    // Manual Controls (for troubleshooting)
+                    ManualControlsSection()
                 }
                 .padding()
             }
             .navigationTitle("LocalPeerSync")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("About") {
+                        showingAbout = true
+                    }
+                }
+            }
         }
         .onAppear {
-            // Auto-start when app appears
+            // Auto-start if not running (first time setup)
             if !syncService.isRunning {
                 syncService.startSync()
             }
         }
-        .alert("LocalPeerSync", isPresented: $showingAlert) {
-            Button("OK") { }
-        } message: {
-            Text(alertMessage)
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
         }
     }
     
-    // MARK: - Status Card
     @ViewBuilder
-    private func StatusCard() -> some View {
+    private func HeaderSection() -> some View {
         VStack(spacing: 12) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.blue)
+            
+            Text("LocalPeerSync")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Instant clipboard sync across your devices")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+    
+    @ViewBuilder
+    private func StatusSection() -> some View {
+        VStack(spacing: 16) {
             HStack {
                 Circle()
                     .fill(syncService.isRunning ? .green : .red)
                     .frame(width: 12, height: 12)
                 
-                Text(syncService.isRunning ? "Active" : "Inactive")
+                Text(syncService.isRunning ? "Service Running" : "Service Stopped")
                     .font(.headline)
                     .fontWeight(.semibold)
                 
                 Spacer()
+            }
+            
+            if syncService.isRunning {
+                HStack {
+                    Text("Connected Devices:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("\(syncService.peers.count)")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    @ViewBuilder
+    private func ControlCenterSection() -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "switch.2")
+                    .font(.title3)
+                    .foregroundColor(.blue)
                 
-                Text("\(syncService.peers.count) devices")
+                Text("Control Center Widget")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+            }
+            
+            VStack(alignment: .leading, spacing: 12) {
+                InstructionRow(
+                    number: "1",
+                    text: "Add widget to Control Center",
+                    detail: "Long press home screen → + → Search 'LocalPeerSync'"
+                )
+                
+                InstructionRow(
+                    number: "2",
+                    text: "Toggle service anytime",
+                    detail: "Swipe down from top-right → Tap LocalPeerSync widget"
+                )
+                
+                InstructionRow(
+                    number: "3",
+                    text: "Sync automatically",
+                    detail: "Copy on any device → Paste on any other device"
+                )
+            }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    @ViewBuilder
+    private func InstructionRow(number: String, text: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(number)
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 20, height: 20)
+                .background(.blue, in: Circle())
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(text)
                     .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(detail)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
             
-            Text(syncService.statusText)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Spacer()
         }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
     
-    // MARK: - Clipboard Card
-    @ViewBuilder
-    private func ClipboardCard() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Clipboard Test")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                Button("Test Sync") {
-                    testSync()
-                }
-                .font(.caption)
-                .buttonStyle(.bordered)
-            }
-            
-            Text("Tap 'Test Sync' to test clipboard synchronization")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .padding()
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
-        }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-    
-    // MARK: - Devices Section
     @ViewBuilder
     private func DevicesSection() -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -110,25 +175,33 @@ struct ContentView: View {
             
             if syncService.peers.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "wifi.slash")
+                    Image(systemName: "magnifyingglass")
                         .font(.title2)
                         .foregroundColor(.secondary)
                     
-                    Text("No devices found")
+                    Text("Searching for devices...")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    Text("Make sure other devices are on the same WiFi network")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
             } else {
                 LazyVStack(spacing: 8) {
                     ForEach(syncService.peers, id: \.self) { peer in
-                        DeviceRow(peer: peer)
+                        HStack {
+                            Image(systemName: "desktopcomputer")
+                                .foregroundColor(.blue)
+                            
+                            Text(peer)
+                                .font(.body)
+                            
+                            Spacer()
+                            
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 8, height: 8)
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -137,130 +210,63 @@ struct ContentView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
     
-    // MARK: - Controls Section
     @ViewBuilder
-    private func ControlsSection() -> some View {
+    private func ManualControlsSection() -> some View {
         VStack(spacing: 12) {
+            Text("Manual Controls")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
             Button(action: {
                 syncService.toggleSync()
             }) {
                 HStack {
                     Image(systemName: syncService.isRunning ? "stop.circle" : "play.circle")
-                    Text(syncService.isRunning ? "Stop Sync" : "Start Sync")
+                    Text(syncService.isRunning ? "Stop Service" : "Start Service")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(syncService.isRunning ? .red : .green, in: RoundedRectangle(cornerRadius: 8))
                 .foregroundColor(.white)
             }
-            Button("Test Bridge") {
-                testBridgeDirectly()
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.red, in: RoundedRectangle(cornerRadius: 8))
-            .foregroundColor(.white)
-            
-            Button("Device Info") {
-                showDeviceInfo()
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.blue, in: RoundedRectangle(cornerRadius: 8))
-            .foregroundColor(.white)
         }
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
+}
+
+struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
     
-    private func testBridgeDirectly() {
-        print("🧪 Testing bridge directly...")
-        
-        let testText = "Bridge test \(Date().timeIntervalSince1970)"
-        let result = testText.withCString { cString in
-            ios_set_clipboard_text(cString)
-        }
-        
-        if result == 1 {
-            showAlert("✅ Bridge test successful!")
-        } else {
-            showAlert("❌ Bridge test failed!")
-        }
-    }
-    
-    // MARK: - Device Row
-    @ViewBuilder
-    private func DeviceRow(peer: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "laptopcomputer")
-                .font(.title3)
-                .foregroundColor(.blue)
-                .frame(width: 24)
-            
-            Text(peer)
-                .font(.body)
-                .fontWeight(.medium)
-            
-            Spacer()
-            
-            Circle()
-                .fill(.green)
-                .frame(width: 8, height: 8)
-        }
-        .padding(.vertical, 4)
-    }
-    
-    // MARK: - Helper Methods
-    private func testSync() {
-        let testMessage = "Test sync from iOS at \(Date().formatted(.dateTime))"
-        
-        // Set clipboard content
-        UIPasteboard.general.string = testMessage
-        
-        // Async sync to avoid blocking UI
-        Task {
-            do {
-                let success = await performAsyncClipboardSync(testMessage)
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(.blue)
                 
-                await MainActor.run {
-                    if success {
-                        showAlert("✅ Test sync sent successfully!")
-                    } else {
-                        showAlert("❌ Test sync failed!")
+                Text("LocalPeerSync")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("Secure, private clipboard sync for your local network. No cloud, no tracking, just seamless copy and paste across your devices.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
                     }
                 }
-            } catch {
-                await MainActor.run {
-                    showAlert("❌ Test sync error: \(error.localizedDescription)")
-                }
             }
         }
-    }
-
-    // Add this new async sync method to ContentView
-    private func performAsyncClipboardSync(_ content: String) async -> Bool {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let success = syncService.syncClipboard(content)
-                continuation.resume(returning: success)
-            }
-        }
-    }
-    
-    private func showDeviceInfo() {
-        alertMessage = """
-        Device Name: \(syncService.deviceName)
-        Device ID: \(syncService.deviceId)
-        Port: \(syncService.port)
-        Status: \(syncService.statusText)
-        Connected Peers: \(syncService.peers.count)
-        """
-        showingAlert = true
-    }
-    
-    private func showAlert(_ message: String) {
-        alertMessage = message
-        showingAlert = true
     }
 }
 
