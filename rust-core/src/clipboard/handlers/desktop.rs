@@ -1,5 +1,5 @@
 // clipboard/handlers/desktop.rs
-//! Desktop clipboard handler with WORLD-CLASS file transfer support
+//! Desktop clipboard handler with PROPER file transfer support
 use crate::clipboard::{sync_engine::ClipboardHandler, types::*};
 use crate::file_transfer::{FileTransferManager, TransferConfig};
 use crate::{Result, SyncError};
@@ -7,15 +7,15 @@ use arboard::Clipboard;
 use std::path::PathBuf;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
-/// WORLD-CLASS Desktop clipboard handler with seamless file transfer
+/// Desktop clipboard handler with REAL file transfer
 pub struct DesktopClipboardHandler {
     clipboard: StdMutex<Clipboard>,
     device_id: String,
     last_text: Option<String>,
     file_transfer_manager: TokioMutex<FileTransferManager>,
-    last_file_paths: Option<Vec<PathBuf>>, // Track last file paths
+    last_file_detection: Option<String>, // Track last file detection to avoid duplicates
 }
 
 impl DesktopClipboardHandler {
@@ -31,199 +31,140 @@ impl DesktopClipboardHandler {
             device_id: uuid::Uuid::new_v4().to_string(),
             last_text: None,
             file_transfer_manager: TokioMutex::new(file_transfer_manager),
-            last_file_paths: None,
+            last_file_detection: None,
         })
     }
 
-    /// ENHANCED: Platform-specific file detection with multiple methods
-    fn detect_files_from_clipboard(&self) -> Vec<PathBuf> {
-        let mut file_paths = Vec::new();
+    /// FIXED: Detect files properly and verify they should be transferred
+    fn detect_copied_files(&mut self) -> Result<Vec<PathBuf>> {
+        let clipboard_text = {
+            let mut clipboard = self.clipboard.lock().unwrap();
+            match clipboard.get_text() {
+                Ok(text) => text,
+                Err(_) => return Ok(Vec::new()),
+            }
+        };
 
-        // Method 1: Try to get files directly from clipboard (platform-specific)
-        #[cfg(target_os = "windows")]
-        {
-            file_paths.extend(self.get_windows_clipboard_files());
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            file_paths.extend(self.get_macos_clipboard_files());
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            file_paths.extend(self.get_linux_clipboard_files());
-        }
-
-        // Method 2: If no direct files found, try parsing text for file paths
-        if file_paths.is_empty() {
-            if let Ok(text) = self.get_clipboard_text() {
-                file_paths.extend(self.extract_file_paths_from_text(&text));
+        // Check if this is the same detection as before
+        if let Some(ref last) = self.last_file_detection {
+            if last == &clipboard_text {
+                return Ok(Vec::new()); // Already processed this
             }
         }
 
-        // Filter to only existing files/directories
-        file_paths.into_iter().filter(|p| p.exists()).collect()
+        // Look for file paths in clipboard text
+        let potential_files = self.extract_and_validate_files(&clipboard_text);
+
+        if !potential_files.is_empty() {
+            // Update last detection
+            self.last_file_detection = Some(clipboard_text);
+
+            info!(
+                "🔍 DETECTED {} potential file(s) to transfer:",
+                potential_files.len()
+            );
+            for path in &potential_files {
+                info!("  📄 {}", path.display());
+            }
+
+            Ok(potential_files)
+        } else {
+            Ok(Vec::new())
+        }
     }
 
-    fn get_clipboard_text(&self) -> Result<String> {
-        let mut clipboard = self.clipboard.lock().unwrap();
-        clipboard
-            .get_text()
-            .map_err(|e| SyncError::Unknown(format!("Clipboard error: {}", e)))
-    }
+    /// Extract and validate files from clipboard text
+    fn extract_and_validate_files(&self, text: &str) -> Vec<PathBuf> {
+        let mut files = Vec::new();
 
-    /// ENHANCED: Multi-method file path extraction
-    fn extract_file_paths_from_text(&self, text: &str) -> Vec<PathBuf> {
-        let mut file_paths = Vec::new();
+        // Try different parsing methods
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
 
-        // Split by various separators
-        for separator in &["\n", "\r\n", "\r", "\0"] {
-            for line in text.split(separator) {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
+            // Clean up the path
+            let clean_path = self.clean_file_path(trimmed);
+            let path = PathBuf::from(&clean_path);
 
-                // Clean up common clipboard prefixes
-                let clean_path = trimmed
-                    .strip_prefix("file://")
-                    .unwrap_or(trimmed)
-                    .replace("%20", " ") // URL decode spaces
-                    .replace("\\", "/") // Normalize separators
-                    .replace("//", "/"); // Remove double separators
-
-                let path = PathBuf::from(&clean_path);
-
-                // Verify the file exists and is accessible
-                if path.exists() && (path.is_file() || path.is_dir()) {
-                    // Additional check: make sure it's not just a random text that happens to be a path
-                    if self.looks_like_intentional_file_path(&clean_path) {
-                        file_paths.push(path.clone()); // Clone before pushing
-                        info!("📁 Detected file: {}", path.display()); // Now we can still use it
-                    }
-                }
+            // Validate the file
+            if self.is_valid_file_for_transfer(&path) {
+                files.push(path);
             }
         }
 
-        file_paths
+        // If we only got one "file" and it's just a filename without path,
+        // it's probably just text, not a real file copy
+        if files.len() == 1 {
+            let path = &files[0];
+            if path
+                .file_name()
+                .map_or(false, |name| name == path.as_os_str())
+            {
+                // This is just a filename without path - probably not a file copy
+                info!(
+                    "⚠️ Detected filename without path, treating as text: {}",
+                    path.display()
+                );
+                return Vec::new();
+            }
+        }
+
+        files
     }
-    /// Determine if a path looks like an intentional file copy (not just random text)
-    fn looks_like_intentional_file_path(&self, path: &str) -> bool {
-        // Must contain path separators
-        if !path.contains('/') && !path.contains('\\') {
+
+    /// Clean file path from clipboard
+    fn clean_file_path(&self, raw_path: &str) -> String {
+        raw_path
+            .trim()
+            .strip_prefix("file://")
+            .unwrap_or(raw_path)
+            .replace("%20", " ")
+            .replace("\\", "/")
+            .trim()
+            .to_string()
+    }
+
+    /// Validate if this is a real file we should transfer
+    fn is_valid_file_for_transfer(&self, path: &PathBuf) -> bool {
+        // Must exist
+        if !path.exists() {
             return false;
         }
 
-        // Should have a reasonable length (not too short, not too long)
-        if path.len() < 3 || path.len() > 500 {
+        // Must be a file or directory
+        if !path.is_file() && !path.is_dir() {
             return false;
         }
 
-        // Should not contain common non-path characters in large quantities
-        let special_char_count = path
-            .chars()
-            .filter(|c| c.is_ascii_punctuation() && !".-_/\\".contains(*c))
-            .count();
-        if special_char_count > path.len() / 4 {
+        // Must have a reasonable path structure
+        if path.components().count() < 2 {
+            // Paths like just "filename.txt" are probably not real file copies
             return false;
+        }
+
+        // Check if it's a reasonable file size (not empty, not too huge for demo)
+        if path.is_file() {
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let size = metadata.len();
+                if size == 0 {
+                    info!("⚠️ Skipping empty file: {}", path.display());
+                    return false;
+                }
+                if size > 50 * 1024 * 1024 {
+                    info!("⚠️ Skipping large file (>50MB): {}", path.display());
+                    return false;
+                }
+            }
         }
 
         true
     }
 
-    // Platform-specific file detection methods
-    #[cfg(target_os = "windows")]
-    fn get_windows_clipboard_files(&self) -> Vec<PathBuf> {
-        // Windows-specific file detection
-        // This would use Windows API to get CF_HDROP format
-        // For now, we'll rely on text parsing
-        Vec::new()
-    }
-
-    #[cfg(target_os = "macos")]
-    fn get_macos_clipboard_files(&self) -> Vec<PathBuf> {
-        // macOS-specific file detection
-        // This would use NSPasteboard to get file URLs
-        // For now, we'll rely on text parsing
-        Vec::new()
-    }
-
-    #[cfg(target_os = "linux")]
-    fn get_linux_clipboard_files(&self) -> Vec<PathBuf> {
-        // Linux-specific file detection
-        // This would use X11/Wayland clipboard APIs
-        // For now, we'll rely on text parsing
-        Vec::new()
-    }
-
-    /// ENHANCED: Better file pasting that works cross-platform
-    async fn paste_files_to_clipboard(&self, file_paths: &[PathBuf]) -> Result<()> {
-        info!(
-            "📁 Setting {} files to clipboard for pasting",
-            file_paths.len()
-        );
-
-        // Create a comprehensive file list for the user
-        let mut file_info = String::new();
-        file_info.push_str("📁 RECEIVED FILES 📁\n");
-        file_info.push_str(&format!(
-            "✅ {} file(s) transferred successfully!\n\n",
-            file_paths.len()
-        ));
-
-        for (i, path) in file_paths.iter().enumerate() {
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-
-            let file_type = if path.is_dir() { "📁" } else { "📄" };
-            let size_info = if path.is_file() {
-                match std::fs::metadata(path) {
-                    Ok(metadata) => format!(" ({})", Self::format_file_size(metadata.len())),
-                    Err(_) => String::new(),
-                }
-            } else {
-                String::new()
-            };
-
-            file_info.push_str(&format!(
-                "{}. {} {}{}\n   📍 {}\n\n",
-                i + 1,
-                file_type,
-                file_name,
-                size_info,
-                path.display()
-            ));
-        }
-
-        file_info.push_str("💡 FILES READY TO USE:\n");
-        file_info.push_str("• Navigate to the paths above to access your files\n");
-        file_info.push_str("• Files are fully transferred and ready to use\n");
-        file_info.push_str("• You can move, copy, or edit them normally\n\n");
-        file_info.push_str("🎉 Transfer completed successfully!");
-
-        // Set to clipboard
-        {
-            let mut clipboard = self.clipboard.lock().unwrap();
-            clipboard.set_text(&file_info).map_err(|e| {
-                SyncError::Unknown(format!("Failed to set file info to clipboard: {}", e))
-            })?;
-        }
-
-        // Also try platform-specific file setting
-        self.set_files_to_clipboard_native(file_paths).await?;
-
-        Ok(())
-    }
-
-    /// Try to set files to clipboard in platform-native format
-    async fn set_files_to_clipboard_native(&self, _file_paths: &[PathBuf]) -> Result<()> {
-        // Platform-specific implementation would go here
-        // For now, we'll just use the text-based approach above
-        Ok(())
-    }
-
+    /// Format file size for display
     fn format_file_size(size: u64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+        const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
         let mut size = size as f64;
         let mut unit_index = 0;
 
@@ -238,97 +179,135 @@ impl DesktopClipboardHandler {
             format!("{:.1} {}", size, UNITS[unit_index])
         }
     }
+
+    /// Set received files information to clipboard
+    async fn set_received_files_info(&self, file_paths: &[PathBuf]) -> Result<()> {
+        let mut info = String::new();
+        info.push_str("🎉 FILE TRANSFER COMPLETE!\n\n");
+        info.push_str(&format!("✅ Received {} file(s):\n\n", file_paths.len()));
+
+        for (i, path) in file_paths.iter().enumerate() {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let size = if path.is_file() {
+                std::fs::metadata(path)
+                    .map(|m| format!(" ({})", Self::format_file_size(m.len())))
+                    .unwrap_or_default()
+            } else {
+                " (folder)".to_string()
+            };
+
+            info.push_str(&format!(
+                "{}. 📄 {}{}\n   📍 {}\n\n",
+                i + 1,
+                name,
+                size,
+                path.display()
+            ));
+        }
+
+        info.push_str("💡 Your files are ready to use!\n");
+        info.push_str("Navigate to the paths above to access them.\n");
+
+        let mut clipboard = self.clipboard.lock().unwrap();
+        clipboard
+            .set_text(&info)
+            .map_err(|e| SyncError::Unknown(format!("Failed to set clipboard: {}", e)))?;
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
 impl ClipboardHandler for DesktopClipboardHandler {
     async fn read_content(&mut self, _config: &ClipboardConfig) -> Result<Option<ClipboardItem>> {
         // PRIORITY 1: Check for copied files
-        let current_files = self.detect_files_from_clipboard();
+        let detected_files = self.detect_copied_files()?;
 
-        if !current_files.is_empty() {
-            // Check if these are new files (different from last time)
-            let files_changed = match &self.last_file_paths {
-                Some(last_paths) => last_paths != &current_files,
-                None => true,
-            };
+        if !detected_files.is_empty() {
+            info!(
+                "🚀 PROCESSING {} FILE(S) FOR TRANSFER:",
+                detected_files.len()
+            );
 
-            if files_changed {
-                self.last_file_paths = Some(current_files.clone());
+            // Prepare files for transfer
+            let manager = self.file_transfer_manager.lock().await;
+            match manager.prepare_files_for_transfer(&detected_files).await {
+                Ok(package) => {
+                    info!("✅ FILE PACKAGE PREPARED:");
+                    info!("   📁 Files: {}", package.files.len());
+                    info!(
+                        "   💾 Total size: {}",
+                        Self::format_file_size(package.total_size)
+                    );
+                    info!("   🆔 Transfer ID: {}", &package.transfer_id[..8]);
 
-                info!(
-                    "📁 NEW FILES DETECTED: {} files/folders",
-                    current_files.len()
-                );
-                for path in &current_files {
-                    info!("  📄 {}", path.display());
-                }
-
-                // Prepare files for transfer using our world-class system
-                let manager = self.file_transfer_manager.lock().await;
-                match manager.prepare_files_for_transfer(&current_files).await {
-                    Ok(package) => {
+                    // Show what files are being transferred
+                    for (i, file) in package.files.iter().enumerate().take(5) {
                         info!(
-                            "✅ PREPARED FILE PACKAGE: {} files, {} total",
-                            package.files.len(),
-                            Self::format_file_size(package.total_size)
+                            "   {}. 📄 {} ({})",
+                            i + 1,
+                            file.name,
+                            Self::format_file_size(file.size)
                         );
-
-                        let clipboard_content = ClipboardContent::FileTransfer {
-                            files: package.files,
-                            total_size: package.total_size,
-                            transfer_id: package.transfer_id,
-                        };
-
-                        return Ok(Some(ClipboardItem::new(
-                            clipboard_content,
-                            self.device_id.clone(),
-                        )));
                     }
-                    Err(e) => {
-                        error!("❌ Failed to prepare files for transfer: {}", e);
-                        // Continue to text handling
+                    if package.files.len() > 5 {
+                        info!("   ... and {} more files", package.files.len() - 5);
                     }
+
+                    let clipboard_content = ClipboardContent::FileTransfer {
+                        files: package.files,
+                        total_size: package.total_size,
+                        transfer_id: package.transfer_id,
+                    };
+
+                    return Ok(Some(ClipboardItem::new(
+                        clipboard_content,
+                        self.device_id.clone(),
+                    )));
                 }
-            } else {
-                // Same files as before, no change
-                return Ok(None);
-            }
-        } else {
-            // No files detected, clear the last file paths
-            if self.last_file_paths.is_some() {
-                self.last_file_paths = None;
-                info!("📋 No files detected, cleared file cache");
+                Err(e) => {
+                    error!("❌ Failed to prepare files: {}", e);
+                }
             }
         }
 
         // PRIORITY 2: Check for text content
-        match self.get_clipboard_text() {
-            Ok(text) => {
-                if text.trim().is_empty() {
-                    return Ok(None);
-                }
-
-                // Check if this is the same text as before
-                if let Some(ref last) = self.last_text {
-                    if last == &text {
-                        return Ok(None);
-                    }
-                }
-                self.last_text = Some(text.clone());
-
-                let clipboard_content = ClipboardContent::Text {
-                    content: text,
-                    encoding: "UTF-8".to_string(),
-                };
-
-                Ok(Some(ClipboardItem::new(
-                    clipboard_content,
-                    self.device_id.clone(),
-                )))
+        let clipboard_text = {
+            let mut clipboard = self.clipboard.lock().unwrap();
+            match clipboard.get_text() {
+                Ok(text) => text,
+                Err(_) => return Ok(None),
             }
-            Err(_) => Ok(None),
+        };
+
+        if clipboard_text.trim().is_empty() {
+            return Ok(None);
         }
+
+        // Check if this is the same text as before
+        if let Some(ref last) = self.last_text {
+            if last == &clipboard_text {
+                return Ok(None);
+            }
+        }
+        self.last_text = Some(clipboard_text.clone());
+
+        // Only treat as text if it doesn't look like a file path
+        if !self.extract_and_validate_files(&clipboard_text).is_empty() {
+            // This looks like file paths, but we didn't process them as files
+            // Probably means they're invalid - skip this clipboard change
+            return Ok(None);
+        }
+
+        let clipboard_content = ClipboardContent::Text {
+            content: clipboard_text,
+            encoding: "UTF-8".to_string(),
+        };
+
+        Ok(Some(ClipboardItem::new(
+            clipboard_content,
+            self.device_id.clone(),
+        )))
     }
 
     async fn write_content(&mut self, item: &ClipboardItem) -> Result<()> {
@@ -344,7 +323,7 @@ impl ClipboardHandler for DesktopClipboardHandler {
                 } else {
                     content.clone()
                 };
-                info!("📋 ← Received text: {}", preview);
+                info!("📋 ← Text received: {}", preview);
                 Ok(())
             }
 
@@ -355,10 +334,10 @@ impl ClipboardHandler for DesktopClipboardHandler {
             } => {
                 info!("🚀 INCOMING FILE TRANSFER!");
                 info!("📁 Files: {}", files.len());
-                info!("💾 Total size: {}", Self::format_file_size(*total_size));
-                info!("🆔 Transfer ID: {}", &transfer_id[..8]);
+                info!("💾 Size: {}", Self::format_file_size(*total_size));
+                info!("🆔 ID: {}", &transfer_id[..8]);
 
-                // Create the transfer package
+                // Create transfer package
                 let package = crate::file_transfer::types::FileTransferPackage {
                     transfer_id: transfer_id.clone(),
                     source_device_id: item.source_device.clone(),
@@ -384,48 +363,34 @@ impl ClipboardHandler for DesktopClipboardHandler {
                     },
                 };
 
-                // Receive the files!
+                // Receive the files
                 let mut manager = self.file_transfer_manager.lock().await;
                 match manager.receive_files(package).await {
                     Ok(written_paths) => {
                         info!("🎉 FILE TRANSFER SUCCESSFUL!");
-                        info!("✅ Received {} files:", written_paths.len());
-
-                        for (i, path) in written_paths.iter().enumerate() {
-                            info!("   {}. 📄 {}", i + 1, path.display());
+                        info!("✅ Files written to:");
+                        for path in &written_paths {
+                            info!("   📄 {}", path.display());
                         }
-
-                        // Release manager lock before clipboard operations
-                        drop(manager);
-
-                        // Set files to clipboard for user
-                        self.paste_files_to_clipboard(&written_paths).await?;
-
-                        // Show success notification
-                        self.show_transfer_success_notification(
-                            &written_paths,
-                            &item.source_device,
-                        );
-
-                        info!("📋 Files are now ready in clipboard! User can paste them or navigate to the locations.");
-                    }
-                    Err(e) => {
-                        error!("💥 FILE TRANSFER FAILED: {}", e);
 
                         // Release manager lock
                         drop(manager);
 
-                        // Set error message to clipboard
+                        // Set file info to clipboard
+                        self.set_received_files_info(&written_paths).await?;
+
+                        info!("📋 File transfer complete! Check clipboard for file locations.");
+                    }
+                    Err(e) => {
+                        error!("💥 File transfer failed: {}", e);
+
+                        drop(manager);
+
                         let error_msg = format!(
-                            "❌ FILE TRANSFER FAILED\n\n\
-                            Error: {}\n\n\
-                            Source: {} files from {}\n\
-                            Transfer ID: {}\n\n\
-                            Please try copying the files again.",
+                            "❌ FILE TRANSFER FAILED\n\nError: {}\nSource: {} files from {}",
                             e,
                             files.len(),
-                            item.source_device,
-                            &transfer_id[..8]
+                            item.source_device
                         );
 
                         let mut clipboard = self.clipboard.lock().unwrap();
@@ -437,26 +402,8 @@ impl ClipboardHandler for DesktopClipboardHandler {
                 Ok(())
             }
 
-            ClipboardContent::RichText { plain_text, .. } => {
-                let mut clipboard = self.clipboard.lock().unwrap();
-                clipboard
-                    .set_text(plain_text)
-                    .map_err(|e| SyncError::Unknown(format!("Failed to set rich text: {}", e)))?;
-                info!("📋 ← Received rich text: {} chars", plain_text.len());
-                Ok(())
-            }
-
-            ClipboardContent::Url { url, .. } => {
-                let mut clipboard = self.clipboard.lock().unwrap();
-                clipboard
-                    .set_text(url)
-                    .map_err(|e| SyncError::Unknown(format!("Failed to set URL: {}", e)))?;
-                info!("📋 ← Received URL: {}", url);
-                Ok(())
-            }
-
             _ => {
-                warn!("❓ Unsupported content type for desktop clipboard");
+                info!("📋 ← Received other content: {}", item.summary());
                 Ok(())
             }
         }
@@ -475,26 +422,6 @@ impl ClipboardHandler for DesktopClipboardHandler {
             "Linux"
         } else {
             "Desktop"
-        }
-    }
-}
-
-impl DesktopClipboardHandler {
-    fn show_transfer_success_notification(&self, file_paths: &[PathBuf], source_device: &str) {
-        // Platform-specific notifications
-        info!("🔔 NOTIFICATION: Transfer Complete!");
-        info!("📱 Source: {}", source_device);
-        info!("📁 Files: {}", file_paths.len());
-
-        for path in file_paths.iter().take(3) {
-            info!(
-                "   📄 {}",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            );
-        }
-
-        if file_paths.len() > 3 {
-            info!("   ... and {} more files", file_paths.len() - 3);
         }
     }
 }
