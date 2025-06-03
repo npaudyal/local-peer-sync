@@ -1,31 +1,56 @@
 //
 //  LocalPeerSyncApp.swift
-//  LocalPeerSync - Background Ready App (PRODUCTION)
+//  LocalPeerSync - Simple iOS Version
 //
 
 import SwiftUI
 import os.log
-import BackgroundTasks
 
 @main
 struct LocalPeerSyncApp: App {
     private let logger = Logger(subsystem: "com.localpeersync.ios", category: "App")
-    @StateObject private var notificationManager = BackgroundNotificationManager.shared
     
     init() {
-        logger.info("🚀 LocalPeerSync iOS - Background Ready Edition")
+        logger.info("🚀 LocalPeerSync iOS Starting...")
         testRustIntegration()
-        setupBackgroundTasks()
+
     }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(SyncService.shared)
-                .environmentObject(notificationManager)
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didFinishLaunchingNotification)) { _ in
-                    handleAppLaunch()
-                }
+                .onAppear {
+                                    // Move the delayed call here
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                        self.testClipboardPermissions()
+                                    }
+                                }
+        }
+    }
+    
+    private func testClipboardPermissions() {
+        logger.info("📋 Testing clipboard permissions...")
+        
+        let testText = "Permission test \(Date().timeIntervalSince1970)"
+        
+        // Test direct access
+        UIPasteboard.general.string = testText
+        
+        if UIPasteboard.general.string == testText {
+            logger.info("✅ Clipboard permissions - GRANTED")
+            
+            // Test our bridge function
+            let cString = testText.cString(using: .utf8)!
+            let result = ios_set_clipboard_text(cString)
+            
+            if result == 1 {
+                logger.info("✅ Clipboard bridge function - WORKING")
+            } else {
+                logger.error("❌ Clipboard bridge function - FAILED")
+            }
+        } else {
+            logger.error("❌ Clipboard permissions - DENIED")
         }
     }
     
@@ -38,76 +63,21 @@ struct LocalPeerSyncApp: App {
         } else {
             logger.error("❌ Rust integration test FAILED!")
         }
+    }
+    
+    private func requestClipboardPermissions() {
+        logger.info("📋 Requesting clipboard permissions...")
         
-        if let stringPtr = rust_test_string() {
-            let rustString = String(cString: stringPtr)
-            rust_sync_free_string(stringPtr)
+        // Request clipboard access by doing a test operation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let testString = "permission_request_\(Int.random(in: 1000...9999))"
+            UIPasteboard.general.string = testString
             
-            if rustString == "Hello from Rust!" {
-                logger.info("✅ Rust string test PASSED!")
+            if UIPasteboard.general.string == testString {
+                self.logger.info("✅ Clipboard permissions granted")
             } else {
-                logger.error("❌ Rust string test FAILED!")
+                self.logger.error("❌ Clipboard permissions denied")
             }
-        }
-    }
-    
-    private func setupBackgroundTasks() {
-        // Register background task identifier
-        let result = BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "com.localpeersync.sync",
-            using: nil
-        ) { task in
-            self.handleBackgroundSync(task: task as! BGAppRefreshTask)
-        }
-        
-        if result {
-            logger.info("✅ Background task registered successfully")
-        } else {
-            logger.error("❌ Failed to register background task")
-        }
-    }
-    
-    private func handleAppLaunch() {
-        logger.info("📱 App launched - checking for background clipboard changes")
-        
-        // Request notification permissions on first launch
-        Task { @MainActor in
-            notificationManager.requestPermissions()
-        }
-        
-        // Check if app was launched by background task
-        scheduleBackgroundRefresh()
-    }
-    
-    private func handleBackgroundSync(task: BGAppRefreshTask) {
-        logger.info("🔄 Handling background app refresh task")
-        
-        task.expirationHandler = {
-            self.logger.warning("⏰ Background sync task expired")
-            task.setTaskCompleted(success: false)
-        }
-        
-        Task {
-            // Quick background sync check
-            await SyncService.shared.performBackgroundSync()
-            
-            // Schedule next refresh
-            self.scheduleBackgroundRefresh()
-            
-            task.setTaskCompleted(success: true)
-            self.logger.info("✅ Background sync completed")
-        }
-    }
-    
-    private func scheduleBackgroundRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: "com.localpeersync.sync")
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
-        
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            logger.info("✅ Background refresh scheduled")
-        } catch {
-            logger.error("❌ Failed to schedule background refresh: \(error)")
         }
     }
 }
@@ -115,9 +85,3 @@ struct LocalPeerSyncApp: App {
 // Import test functions from Rust
 @_silgen_name("test_rust_connection")
 func rust_test_connection() -> Int32
-
-@_silgen_name("test_rust_string")
-func rust_test_string() -> UnsafeMutablePointer<CChar>?
-
-@_silgen_name("sync_free_string")
-func rust_sync_free_string(_ ptr: UnsafeMutablePointer<CChar>)

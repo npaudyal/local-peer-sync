@@ -51,7 +51,7 @@ impl ClipboardHandler for IOSClipboardHandler {
     async fn read_content(&mut self, _config: &ClipboardConfig) -> Result<Option<ClipboardItem>> {
         #[cfg(target_os = "ios")]
         {
-            let content = { ios_get_clipboard_text() };
+            let content = unsafe { ios_get_clipboard_text() };
 
             if content.is_null() {
                 return Ok(None);
@@ -93,7 +93,7 @@ impl ClipboardHandler for IOSClipboardHandler {
                     let c_content = CString::new(content.as_str())
                         .map_err(|e| SyncError::Unknown(format!("Invalid text content: {}", e)))?;
 
-                    let success = { ios_set_clipboard_text(c_content.as_ptr()) };
+                    let success = unsafe { ios_set_clipboard_text(c_content.as_ptr()) };
 
                     if success == 1 {
                         info!(
@@ -108,47 +108,6 @@ impl ClipboardHandler for IOSClipboardHandler {
                     }
                 }
 
-                ClipboardContent::Image {
-                    primary_data,
-                    width,
-                    height,
-                    ..
-                } => {
-                    let success = {
-                        ios_set_clipboard_image(
-                            primary_data.as_ptr(),
-                            primary_data.len(),
-                            *width,
-                            *height,
-                        )
-                    };
-
-                    if success == 1 {
-                        info!("📱 Set iOS clipboard image: {}x{}", width, height);
-                        Ok(())
-                    } else {
-                        Err(SyncError::Unknown(
-                            "Failed to set iOS clipboard image".to_string(),
-                        ))
-                    }
-                }
-
-                ClipboardContent::Url { url, .. } => {
-                    let c_url = CString::new(url.as_str())
-                        .map_err(|e| SyncError::Unknown(format!("Invalid URL content: {}", e)))?;
-
-                    let success = { ios_set_clipboard_url(c_url.as_ptr()) };
-
-                    if success == 1 {
-                        info!("📱 Set iOS clipboard URL: {}", url);
-                        Ok(())
-                    } else {
-                        Err(SyncError::Unknown(
-                            "Failed to set iOS clipboard URL".to_string(),
-                        ))
-                    }
-                }
-
                 _ => {
                     warn!("📱 iOS clipboard: Unsupported content type, converting to text");
                     let text_content = self.content_to_text(item);
@@ -156,7 +115,7 @@ impl ClipboardHandler for IOSClipboardHandler {
                         SyncError::Unknown(format!("Invalid fallback content: {}", e))
                     })?;
 
-                    let success = { ios_set_clipboard_text(c_content.as_ptr()) };
+                    let success = unsafe { ios_set_clipboard_text(c_content.as_ptr()) };
 
                     if success == 1 {
                         Ok(())
@@ -186,51 +145,13 @@ impl ClipboardHandler for IOSClipboardHandler {
     }
 }
 
-// STUB IMPLEMENTATIONS - These will be overridden by Swift when linking with iOS app
-// These are weak symbols that allow Swift to override them
-
-#[no_mangle]
-pub extern "C" fn ios_get_clipboard_text() -> *mut c_char {
-    // Stub implementation - returns null
-    // Will be overridden by Swift implementation
-    ptr::null_mut()
-}
-
-#[no_mangle]
-pub extern "C" fn ios_set_clipboard_text(_text: *const c_char) -> c_int {
-    // Stub implementation - returns failure
-    // Will be overridden by Swift implementation
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn ios_set_clipboard_image(
-    _data: *const u8,
-    _len: usize,
-    _width: u32,
-    _height: u32,
-) -> c_int {
-    // Stub implementation - returns failure
-    // Will be overridden by Swift implementation
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn ios_set_clipboard_url(_url: *const c_char) -> c_int {
-    // Stub implementation - returns failure
-    // Will be overridden by Swift implementation
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn ios_free_string(_ptr: *mut c_char) {
-    // Stub implementation - does nothing
-    // Will be overridden by Swift implementation
-}
-
-// External declarations for iOS functions
-// These will be resolved by the Swift implementations when linking
 extern "C" {
-    // These declarations are for internal use and will be resolved by Swift
-    // The actual implementations are provided as stubs above
+    /// Get clipboard text from iOS (implemented in Swift)
+    fn ios_get_clipboard_text() -> *mut c_char;
+
+    /// Set clipboard text on iOS (implemented in Swift)
+    fn ios_set_clipboard_text(text: *const c_char) -> c_int;
+
+    /// Free string allocated by iOS (implemented in Swift)
+    fn ios_free_string(ptr: *mut c_char);
 }
