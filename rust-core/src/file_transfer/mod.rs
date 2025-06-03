@@ -1,4 +1,4 @@
-// file_transfer/mod.rs
+// src/file_transfer/mod.rs
 //! Advanced file transfer system for cross-device synchronization
 
 pub mod compression;
@@ -6,6 +6,9 @@ pub mod manager;
 pub mod progress;
 pub mod security;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
 
 pub use compression::CompressionEngine;
 pub use manager::FileTransferManager;

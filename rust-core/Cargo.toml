@@ -60,6 +60,8 @@ lz4_flex = "0.11"
 
 [dev-dependencies]
 if-addrs = "0.10"
+tempfile = "3.0"
+tokio-test = "0.4"
 
 [package.metadata.ios]
 deployment_target = "12.0"
@@ -94,3 +96,7 @@ arboard = "3.2"
 [[bin]]
 name = "file_transfer_demo"
 path = "examples/file_transfer_demo.rs"
+
+[[example]]
+name = "test_file_transfer"
+path = "examples/test_file_transfer.rs"
