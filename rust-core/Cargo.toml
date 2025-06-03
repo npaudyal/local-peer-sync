@@ -10,6 +10,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
+whoami = "1.4"
 
 # Real mDNS implementation
 mdns-sd = "0.7"

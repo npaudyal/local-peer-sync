@@ -165,10 +165,8 @@ impl DiscoveryService {
         let discovered_peers = Arc::clone(&self.discovered_peers);
         let our_device_id = self.config.device_id.clone();
 
-        info!("🔍 DISCOVERY STARTUP:");
-        info!("   🎯 Looking for: {}", service_type);
-        info!("   🚫 Ignoring our ID: {}", our_device_id);
-        info!("   🔍 Expected to find: Ultimate-mac-* devices");
+        info!("🔍 Starting peer discovery for: {}", service_type);
+        info!("🚫 Ignoring our own device: {}", &our_device_id[..8]);
 
         // Create a channel for receiving discovery events
         let (tx, mut rx) = mpsc::channel(100);
@@ -226,33 +224,21 @@ impl DiscoveryService {
         discovered_peers: &Arc<RwLock<HashMap<String, DiscoveredPeer>>>,
         our_device_id: &str,
     ) -> Result<()> {
-        info!("📡 mDNS EVENT RECEIVED: {:?}", event);
-
         match event {
             ServiceEvent::ServiceResolved(info) => {
-                info!("🎯 ===== SERVICE RESOLVED =====");
-                info!("   📍 Fullname: {}", info.get_fullname());
-                info!("   🏠 Hostname: {}", info.get_hostname());
-                info!("   🔌 Port: {}", info.get_port());
-                info!("   🌐 Addresses: {:?}", info.get_addresses());
-
-                // Parse TXT record with enhanced debugging
                 let txt_data = Self::parse_txt_properties_enhanced(&info);
-                info!("   📝 TXT Data: {:?}", txt_data);
 
-                // Extract device ID from TXT record
                 if let Some(device_id) = txt_data.get("device_id") {
-                    info!("🔍 Found device_id: {}", device_id);
-
-                    // Don't add ourselves
                     if device_id == our_device_id {
-                        info!("🚫 Ignoring our own service advertisement");
-                        return Ok(());
+                        return Ok(()); // Ignore our own service
                     }
 
-                    // Get first IP address
                     if let Some(&ip_addr) = info.get_addresses().iter().next() {
-                        info!("✅ Creating peer for: {} at {}", device_id, ip_addr);
+                        println!(
+                            "🔗 Found device: {} at {}",
+                            info.get_hostname().trim_end_matches('.'),
+                            ip_addr
+                        );
 
                         let discovered_peer = DiscoveredPeer {
                             name: info.get_hostname().trim_end_matches('.').to_string(),
@@ -265,7 +251,6 @@ impl DiscoveryService {
                         {
                             let mut peers = discovered_peers.write().await;
                             peers.insert(device_id.clone(), discovered_peer.clone());
-                            info!("📝 Stored peer in discovered_peers map");
                         }
 
                         // Convert to Peer and add to peer manager
@@ -275,60 +260,30 @@ impl DiscoveryService {
                             discovered_peer.address,
                         );
 
-                        // Add peer to peer manager
                         peer_manager.add_peer(peer).await;
-                        info!("📝 Added peer to peer_manager");
 
-                        // Auto-trust discovered peers for testing
-                        info!("🤝 Auto-trusting discovered peer: {}", device_id);
-                        if let Err(e) = peer_manager.trust_peer(&device_id).await {
-                            warn!("❌ Failed to auto-trust peer {}: {}", device_id, e);
+                        // Auto-trust discovered peers
+                        if let Err(_) = peer_manager.trust_peer(&device_id).await {
+                            // Silent fail
                         } else {
-                            info!(
-                                "✅ Successfully auto-trusted peer: {}",
-                                discovered_peer.name
-                            );
+                            println!("✅ Connected to: {}", discovered_peer.name);
                         }
-
-                        info!("🎉 ===== DISCOVERY SUCCESS =====");
-                        info!("   📱 Device: {}", discovered_peer.name);
-                        info!("   🆔 ID: {}", device_id);
-                        info!("   🌐 Address: {}", ip_addr);
-                        info!("   🔌 Port: {}", info.get_port());
-                        info!("==============================");
-                    } else {
-                        warn!("❌ Service resolved but no IP addresses found");
-                        info!("   Available addresses: {:?}", info.get_addresses());
                     }
-                } else {
-                    warn!("❌ Service resolved but no device_id in TXT record");
-                    info!(
-                        "   Available TXT keys: {:?}",
-                        txt_data.keys().collect::<Vec<_>>()
-                    );
-                    info!("   Full TXT data: {:?}", txt_data);
                 }
             }
-            ServiceEvent::ServiceRemoved(service_type, fullname) => {
-                info!("🚫 Service removed: {} ({})", fullname, service_type);
+            ServiceEvent::ServiceRemoved(_, fullname) => {
+                if !fullname.contains(our_device_id) {
+                    println!("👋 Device disconnected");
+                }
             }
-            ServiceEvent::ServiceFound(service_type, fullname) => {
-                info!(
-                    "🔍 Service found: {} ({}) - will resolve automatically",
-                    fullname, service_type
-                );
+            ServiceEvent::SearchStarted(_) => {
+                // Silent
             }
-            ServiceEvent::SearchStarted(service_type) => {
-                info!("🚀 ===== mDNS SEARCH STARTED =====");
-                info!("   🎯 Service: {}", service_type);
-                info!("   🔍 Looking for Mac devices...");
-                info!("================================");
+            ServiceEvent::SearchStopped(_) => {
+                // Silent
             }
-            ServiceEvent::SearchStopped(service_type) => {
-                warn!("🛑 ===== mDNS SEARCH STOPPED =====");
-                warn!("   ⚠️ Service: {}", service_type);
-                warn!("   🚨 This might indicate a problem!");
-                warn!("================================");
+            _ => {
+                // Ignore other events silently
             }
         }
 

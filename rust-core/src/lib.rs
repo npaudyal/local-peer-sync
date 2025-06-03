@@ -25,6 +25,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 /// Main synchronization manager
+#[derive(Clone)]
 pub struct LocalPeerSync {
     config: SyncConfig,
     manager: Arc<RwLock<SyncManager>>,

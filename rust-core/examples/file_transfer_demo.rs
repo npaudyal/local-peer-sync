@@ -1,74 +1,100 @@
 // examples/file_transfer_demo.rs
-use local_peer_sync_core::file_transfer::{FileTransferManager, TransferConfig};
+use local_peer_sync_core::clipboard::ClipboardContent;
 use local_peer_sync_core::*;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> local_peer_sync_core::Result<()> {
-    // Initialize logging
+    // Set logging to only show important info
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::WARN) // Only warnings and errors
+        .with_target(false)
         .init();
 
-    info!("🚀 Starting World-Class File Transfer Demo");
+    println!("🚀 Starting File Transfer Demo");
+    println!("📋 This demo will sync text between devices");
+    println!("📁 File transfer is being developed...");
 
-    // Create configuration
-    let config = SyncConfig::with_device_name("Demo Device".to_string());
+    // Create config
+    let device_name = format!(
+        "Device-{}",
+        whoami::fallible::hostname().unwrap_or_else(|_| "Unknown".to_string())
+    );
+    let config = SyncConfig::with_device_name(device_name.clone());
+
+    println!("📱 Device: {}", device_name);
+    println!("🔌 Port: {}", config.port);
 
     // Initialize sync system
     let sync = LocalPeerSync::new(config).await?;
+    let sync_arc = Arc::new(sync);
 
-    // Create enhanced clipboard engine
+    // Create clipboard engine
     let device_id = uuid::Uuid::new_v4().to_string();
     let mut clipboard_engine = ClipboardSyncEngine::new(device_id, 50)?;
 
-    // Set up progress monitoring
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+    // Start monitoring
+    let mut clipboard_rx = clipboard_engine.start_monitoring().await?;
 
-    // Create file transfer manager and set progress callback
-    let transfer_config = TransferConfig::default();
-    let mut file_manager = FileTransferManager::new(transfer_config)?;
-    file_manager.set_progress_callback(progress_tx);
-
-    // Start clipboard monitoring
-    let _clipboard_rx = clipboard_engine.start_monitoring().await?;
-
-    // Connect clipboard engine
-    let engine_arc = std::sync::Arc::new(clipboard_engine);
-    sync.set_clipboard_engine(engine_arc).await?;
+    // Connect to sync system
+    let engine_arc = Arc::new(clipboard_engine);
+    sync_arc.set_clipboard_engine(engine_arc).await?;
 
     // Start the service
-    sync.start().await?;
-    info!("✅ File transfer system is running!");
+    sync_arc.start().await?;
 
-    // Monitor progress updates
+    println!("✅ Service started!");
+    println!("🔍 Looking for other devices...");
+
+    // Monitor for peer connections
+    let sync_clone = Arc::clone(&sync_arc);
     tokio::spawn(async move {
-        while let Some(progress) = progress_rx.recv().await {
-            info!(
-                "📊 Transfer Progress: {:.1}% ({}/{} files, {} MB/s)",
-                if progress.bytes_total > 0 {
-                    (progress.bytes_transferred as f64 / progress.bytes_total as f64) * 100.0
-                } else {
-                    0.0
-                },
-                progress.files_completed,
-                progress.files_total,
-                progress.speed_bps / (1024 * 1024)
-            );
+        loop {
+            sleep(Duration::from_secs(3)).await;
+
+            match sync_clone.get_peers().await {
+                Ok(peers) => {
+                    if !peers.is_empty() {
+                        println!("👥 Connected devices: {}", peers.join(", "));
+                    }
+                }
+                Err(_) => {}
+            }
         }
     });
 
-    info!("📋 Copy some files and watch them transfer between devices!");
-    info!("🎯 System is now monitoring clipboard for file operations...");
+    // Monitor clipboard changes
+    let sync_for_clipboard = Arc::clone(&sync_arc);
+    tokio::spawn(async move {
+        while let Some(item) = clipboard_rx.recv().await {
+            println!("📋 Clipboard changed: {}", item.summary());
+
+            // Try to broadcast to peers
+            let content_to_sync = match &item.content {
+                ClipboardContent::Text { content, .. } => content.clone(),
+                _ => item.summary(),
+            };
+
+            match sync_for_clipboard.sync_clipboard(content_to_sync).await {
+                Ok(()) => {
+                    println!("📤 Synced to connected devices");
+                }
+                Err(e) => {
+                    println!("❌ Failed to sync: {}", e);
+                }
+            }
+        }
+    });
+
+    println!("\n🎯 Instructions:");
+    println!("1. Run this on multiple devices on the same WiFi");
+    println!("2. Copy text on one device");
+    println!("3. Watch it appear on other devices");
+    println!("4. Press Ctrl+C to stop");
 
     // Keep running
     loop {
         sleep(Duration::from_secs(10)).await;
-
-        // Perform cleanup periodically
-        if let Err(e) = file_manager.cleanup_expired_transfers().await {
-            error!("Cleanup error: {}", e);
-        }
     }
 }
