@@ -99,5 +99,5 @@ name = "file_transfer_demo"
 path = "examples/file_transfer_demo.rs"
 
 [[example]]
-name = "test_file_transfer"
-path = "examples/test_file_transfer.rs"
+name = "file_transfer_demo"
+path = "examples/file_transfer_demo.rs"
