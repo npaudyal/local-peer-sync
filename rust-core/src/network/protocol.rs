@@ -55,6 +55,7 @@ pub struct SyncMessage {
 }
 
 /// Enhanced payload supporting different data types
+// In network/protocol.rs - make sure this variant exists
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncPayload {
     /// Raw text payload (legacy)
@@ -66,7 +67,7 @@ pub enum SyncPayload {
     /// Multiple clipboard items (history)
     ClipboardHistory(Vec<ClipboardItem>),
 
-    /// 🆕 File transfer payload
+    /// 🆕 File transfer payload - MAKE SURE THIS EXISTS
     FileTransfer(crate::file_transfer::types::FileTransferPackage),
 
     /// Device information

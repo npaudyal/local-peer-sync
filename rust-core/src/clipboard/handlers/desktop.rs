@@ -1,21 +1,24 @@
 // clipboard/handlers/desktop.rs
-//! Desktop clipboard handler with reliable file detection
+//! Desktop clipboard handler with FIXED deduplication and proper message types
 use crate::clipboard::{sync_engine::ClipboardHandler, types::*};
 use crate::file_transfer::{FileTransferManager, TransferConfig};
 use crate::{Result, SyncError};
 use arboard::Clipboard;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{error, info};
 
-/// Desktop clipboard handler with WORKING file detection
+/// Desktop clipboard handler with PROPER file transfer
 pub struct DesktopClipboardHandler {
     clipboard: StdMutex<Clipboard>,
     device_id: String,
     last_text: Option<String>,
     file_transfer_manager: TokioMutex<FileTransferManager>,
-    last_clipboard_sequence: u64,
+    last_processed_hash: Option<u64>, // Hash of last processed content
+    processing_file_transfer: bool,   // Flag to prevent feedback loops
 }
 
 impl DesktopClipboardHandler {
@@ -31,28 +34,80 @@ impl DesktopClipboardHandler {
             device_id: uuid::Uuid::new_v4().to_string(),
             last_text: None,
             file_transfer_manager: TokioMutex::new(file_transfer_manager),
-            last_clipboard_sequence: 0,
+            last_processed_hash: None,
+            processing_file_transfer: false,
         })
     }
 
-    /// Try to detect files using multiple strategies
-    fn detect_files_smart(&mut self) -> Result<Vec<PathBuf>> {
-        // Strategy 1: Platform-specific detection (simplified)
-        let platform_files = self.detect_platform_files()?;
-        if !platform_files.is_empty() {
-            return Ok(platform_files);
+    /// Calculate hash of clipboard state for deduplication
+    fn calculate_clipboard_hash(&self, text: &str, files: &[PathBuf]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        for file in files {
+            file.hash(&mut hasher);
         }
-
-        // Strategy 2: Check clipboard text for file indicators
-        let text_files = self.detect_files_from_text()?;
-        if !text_files.is_empty() {
-            return Ok(text_files);
-        }
-
-        Ok(Vec::new())
+        hasher.finish()
     }
 
-    /// Platform-specific file detection (simplified to avoid objc issues)
+    /// Check if text is our own file transfer summary
+    fn is_our_transfer_summary(&self, text: &str) -> bool {
+        text.starts_with("🎉 FILES RECEIVED")
+            || (text.starts_with("File Transfer:")
+                && text.contains("files")
+                && text.contains("bytes"))
+    }
+
+    /// Detect files using platform-specific methods
+    fn detect_files_smart(&mut self) -> Result<Vec<PathBuf>> {
+        // Don't detect files if we're in the middle of processing a transfer
+        if self.processing_file_transfer {
+            return Ok(Vec::new());
+        }
+
+        // Get current clipboard text
+        let clipboard_text = {
+            let mut clipboard = self.clipboard.lock().unwrap();
+            match clipboard.get_text() {
+                Ok(text) => text,
+                Err(_) => return Ok(Vec::new()),
+            }
+        };
+
+        // Skip if this is our own transfer summary
+        if self.is_our_transfer_summary(&clipboard_text) {
+            return Ok(Vec::new());
+        }
+
+        // Try platform-specific detection first
+        let platform_files = self.detect_platform_files()?;
+
+        // If no platform files, try text-based detection
+        let detected_files = if platform_files.is_empty() {
+            self.detect_files_from_text(&clipboard_text)?
+        } else {
+            platform_files
+        };
+
+        // Calculate hash of current state
+        let current_hash = self.calculate_clipboard_hash(&clipboard_text, &detected_files);
+
+        // Check if we've already processed this exact state
+        if let Some(last_hash) = self.last_processed_hash {
+            if last_hash == current_hash {
+                return Ok(Vec::new()); // Already processed
+            }
+        }
+
+        // Update hash if we found files
+        if !detected_files.is_empty() {
+            self.last_processed_hash = Some(current_hash);
+            info!("🆕 NEW FILE DETECTION (hash: {})", current_hash);
+        }
+
+        Ok(detected_files)
+    }
+
+    /// Platform-specific file detection
     fn detect_platform_files(&mut self) -> Result<Vec<PathBuf>> {
         #[cfg(target_os = "macos")]
         {
@@ -79,7 +134,6 @@ impl DesktopClipboardHandler {
     fn detect_macos_files_simple(&mut self) -> Result<Vec<PathBuf>> {
         use std::process::Command;
 
-        // Use osascript to check clipboard for files
         let output = Command::new("osascript")
             .arg("-e")
             .arg(
@@ -102,22 +156,18 @@ impl DesktopClipboardHandler {
         if let Ok(output) = output {
             if output.status.success() {
                 let paths_text = String::from_utf8_lossy(&output.stdout);
-                let mut files = Vec::new();
+                let trimmed = paths_text.trim();
 
-                info!("🍎 macOS osascript output: '{}'", paths_text.trim());
-
-                for line in paths_text.lines() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() && trimmed != "missing value" {
-                        let path = PathBuf::from(trimmed);
+                if !trimmed.is_empty() && trimmed != "missing value" {
+                    let mut files = Vec::new();
+                    for line in trimmed.lines() {
+                        let path = PathBuf::from(line.trim());
                         if path.exists() {
-                            info!("  📄 Found file: {}", path.display());
                             files.push(path);
                         }
                     }
+                    return Ok(files);
                 }
-
-                return Ok(files);
             }
         }
 
@@ -126,7 +176,6 @@ impl DesktopClipboardHandler {
 
     #[cfg(target_os = "windows")]
     fn detect_windows_files_simple(&mut self) -> Result<Vec<PathBuf>> {
-        // For now, use PowerShell to check clipboard
         use std::process::Command;
 
         let output = Command::new("powershell")
@@ -139,14 +188,11 @@ impl DesktopClipboardHandler {
                 let paths_text = String::from_utf8_lossy(&output.stdout);
                 let mut files = Vec::new();
 
-                info!("🪟 Windows PowerShell output: '{}'", paths_text.trim());
-
                 for line in paths_text.lines() {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         let path = PathBuf::from(trimmed);
                         if path.exists() {
-                            info!("  📄 Found file: {}", path.display());
                             files.push(path);
                         }
                     }
@@ -163,7 +209,6 @@ impl DesktopClipboardHandler {
     fn detect_linux_files_simple(&mut self) -> Result<Vec<PathBuf>> {
         use std::process::Command;
 
-        // Try to get file list from clipboard
         let output = Command::new("xclip")
             .args(&["-selection", "clipboard", "-t", "text/uri-list", "-o"])
             .output();
@@ -173,14 +218,11 @@ impl DesktopClipboardHandler {
                 let content = String::from_utf8_lossy(&output.stdout);
                 let mut files = Vec::new();
 
-                info!("🐧 Linux xclip output: '{}'", content.trim());
-
                 for line in content.lines() {
                     if line.starts_with("file://") {
                         let path_str = line.strip_prefix("file://").unwrap_or(line);
                         let path = PathBuf::from(path_str);
                         if path.exists() {
-                            info!("  📄 Found file: {}", path.display());
                             files.push(path);
                         }
                     }
@@ -194,42 +236,15 @@ impl DesktopClipboardHandler {
     }
 
     /// Detect files from clipboard text analysis
-    fn detect_files_from_text(&mut self) -> Result<Vec<PathBuf>> {
-        let clipboard_text = {
-            let mut clipboard = self.clipboard.lock().unwrap();
-            match clipboard.get_text() {
-                Ok(text) => text,
-                Err(_) => return Ok(Vec::new()),
-            }
-        };
-
-        info!("🔍 Analyzing clipboard text: '{}'", clipboard_text);
-
-        // Check if text looks like a single filename that we should search for
-        if self.looks_like_filename(&clipboard_text) {
-            info!("🔍 Text looks like filename, searching...");
-            if let Some(found_file) = self.find_file_by_name(&clipboard_text.trim()) {
-                info!("✅ Found file by name: {}", found_file.display());
+    fn detect_files_from_text(&mut self, clipboard_text: &str) -> Result<Vec<PathBuf>> {
+        // Check if text looks like a filename that we should search for
+        if self.looks_like_filename(clipboard_text) {
+            if let Some(found_file) = self.find_file_by_name(clipboard_text.trim()) {
                 return Ok(vec![found_file]);
             }
         }
 
-        // Check for full file paths
-        let mut files = Vec::new();
-        for line in clipboard_text.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let path = PathBuf::from(trimmed);
-            if path.exists() && (path.is_file() || path.is_dir()) {
-                info!("✅ Found full path: {}", path.display());
-                files.push(path);
-            }
-        }
-
-        Ok(files)
+        Ok(Vec::new())
     }
 
     /// Check if text looks like just a filename
@@ -248,6 +263,11 @@ impl DesktopClipboardHandler {
 
         // Should have an extension
         if !trimmed.contains('.') {
+            return false;
+        }
+
+        // Should not be our transfer summary
+        if self.is_our_transfer_summary(trimmed) {
             return false;
         }
 
@@ -300,14 +320,17 @@ impl DesktopClipboardHandler {
 #[async_trait::async_trait]
 impl ClipboardHandler for DesktopClipboardHandler {
     async fn read_content(&mut self, _config: &ClipboardConfig) -> Result<Option<ClipboardItem>> {
-        // Increment sequence for change detection
-        self.last_clipboard_sequence += 1;
-
         // Try to detect files first
         let detected_files = self.detect_files_smart()?;
 
         if !detected_files.is_empty() {
-            info!("🚀 DETECTED {} FILE(S) FOR TRANSFER!", detected_files.len());
+            info!(
+                "🚀 DETECTED {} NEW FILE(S) FOR TRANSFER!",
+                detected_files.len()
+            );
+
+            // Set processing flag to prevent feedback loops
+            self.processing_file_transfer = true;
 
             for file in &detected_files {
                 info!("  📁 {}", file.display());
@@ -325,24 +348,15 @@ impl ClipboardHandler for DesktopClipboardHandler {
                     );
                     info!("   🆔 Transfer ID: {}", &package.transfer_id[..8]);
 
-                    // Show file details
-                    for (i, file) in package.files.iter().enumerate().take(3) {
-                        info!(
-                            "   {}. 📄 {} ({})",
-                            i + 1,
-                            file.name,
-                            Self::format_file_size(file.size)
-                        );
-                    }
-                    if package.files.len() > 3 {
-                        info!("   ... and {} more files", package.files.len() - 3);
-                    }
-
+                    // Create FileTransfer content (NOT text)
                     let clipboard_content = ClipboardContent::FileTransfer {
                         files: package.files,
                         total_size: package.total_size,
                         transfer_id: package.transfer_id,
                     };
+
+                    // Reset processing flag
+                    self.processing_file_transfer = false;
 
                     return Ok(Some(ClipboardItem::new(
                         clipboard_content,
@@ -351,49 +365,62 @@ impl ClipboardHandler for DesktopClipboardHandler {
                 }
                 Err(e) => {
                     error!("❌ Failed to prepare files: {}", e);
+                    self.processing_file_transfer = false;
                 }
             }
         }
 
-        // Fall back to text handling
-        let clipboard_text = {
-            let mut clipboard = self.clipboard.lock().unwrap();
-            match clipboard.get_text() {
-                Ok(text) => text,
-                Err(_) => return Ok(None),
-            }
-        };
+        // Handle text content (only if not processing files)
+        if !self.processing_file_transfer {
+            let clipboard_text = {
+                let mut clipboard = self.clipboard.lock().unwrap();
+                match clipboard.get_text() {
+                    Ok(text) => text,
+                    Err(_) => return Ok(None),
+                }
+            };
 
-        if clipboard_text.trim().is_empty() {
-            return Ok(None);
-        }
-
-        // Check if this is the same text as before
-        if let Some(ref last) = self.last_text {
-            if last == &clipboard_text {
+            if clipboard_text.trim().is_empty() {
                 return Ok(None);
             }
+
+            // Skip our own transfer summaries
+            if self.is_our_transfer_summary(&clipboard_text) {
+                return Ok(None);
+            }
+
+            // Check if this is the same text as before
+            if let Some(ref last) = self.last_text {
+                if last == &clipboard_text {
+                    return Ok(None);
+                }
+            }
+            self.last_text = Some(clipboard_text.clone());
+
+            let clipboard_content = ClipboardContent::Text {
+                content: clipboard_text,
+                encoding: "UTF-8".to_string(),
+            };
+
+            return Ok(Some(ClipboardItem::new(
+                clipboard_content,
+                self.device_id.clone(),
+            )));
         }
-        self.last_text = Some(clipboard_text.clone());
 
-        let clipboard_content = ClipboardContent::Text {
-            content: clipboard_text,
-            encoding: "UTF-8".to_string(),
-        };
-
-        Ok(Some(ClipboardItem::new(
-            clipboard_content,
-            self.device_id.clone(),
-        )))
+        Ok(None)
     }
 
     async fn write_content(&mut self, item: &ClipboardItem) -> Result<()> {
         match &item.content {
             ClipboardContent::Text { content, .. } => {
-                let mut clipboard = self.clipboard.lock().unwrap();
-                clipboard
-                    .set_text(content)
-                    .map_err(|e| SyncError::Unknown(format!("Failed to set text: {}", e)))?;
+                // Scope the clipboard guard to avoid holding it across await
+                {
+                    let mut clipboard = self.clipboard.lock().unwrap();
+                    clipboard
+                        .set_text(content)
+                        .map_err(|e| SyncError::Unknown(format!("Failed to set text: {}", e)))?;
+                } // Guard is dropped here
 
                 let preview = if content.len() > 100 {
                     format!("{}...", &content[..100])
@@ -413,6 +440,9 @@ impl ClipboardHandler for DesktopClipboardHandler {
                 info!("📁 Files: {}", files.len());
                 info!("💾 Size: {}", Self::format_file_size(*total_size));
                 info!("🆔 ID: {}", &transfer_id[..8]);
+
+                // Set processing flag to prevent interference
+                self.processing_file_transfer = true;
 
                 // Create transfer package
                 let package = crate::file_transfer::types::FileTransferPackage {
@@ -449,9 +479,9 @@ impl ClipboardHandler for DesktopClipboardHandler {
                             info!("   ✅ {}", path.display());
                         }
 
-                        drop(manager);
+                        drop(manager); // Drop manager before clipboard operations
 
-                        // Create comprehensive file info for clipboard
+                        // Create file info for clipboard (but mark it as ours)
                         let mut info = String::new();
                         info.push_str("🎉 FILES RECEIVED SUCCESSFULLY!\n\n");
 
@@ -475,25 +505,38 @@ impl ClipboardHandler for DesktopClipboardHandler {
                         }
 
                         info.push_str("💡 Your files are ready to use!\n");
-                        info.push_str("You can navigate to the paths above to access them.\n");
                         info.push_str(&format!("🎊 Transfer from: {}", item.source_device));
 
-                        let mut clipboard = self.clipboard.lock().unwrap();
-                        let _ = clipboard.set_text(&info);
+                        // Set to clipboard (scoped to drop guard before await)
+                        {
+                            let mut clipboard = self.clipboard.lock().unwrap();
+                            let _ = clipboard.set_text(&info);
+                        } // Guard is dropped here
+
+                        // Reset processing flag after a delay
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        self.processing_file_transfer = false;
 
                         info!("📋 File transfer complete! File info copied to clipboard.");
                     }
                     Err(e) => {
                         error!("💥 Transfer failed: {}", e);
-                        drop(manager);
+                        drop(manager); // Drop manager before clipboard operations
 
                         let error_msg = format!(
-                            "❌ FILE TRANSFER FAILED\n\nError: {}\nSource: {} files from {}\nTransfer ID: {}",
-                            e, files.len(), item.source_device, &transfer_id[..8]
+                            "❌ FILE TRANSFER FAILED\n\nError: {}\nSource: {} files from {}",
+                            e,
+                            files.len(),
+                            item.source_device
                         );
-                        let mut clipboard = self.clipboard.lock().unwrap();
-                        let _ = clipboard.set_text(&error_msg);
 
+                        // Set error to clipboard (scoped to drop guard)
+                        {
+                            let mut clipboard = self.clipboard.lock().unwrap();
+                            let _ = clipboard.set_text(&error_msg);
+                        } // Guard is dropped here
+
+                        self.processing_file_transfer = false;
                         return Err(e);
                     }
                 }
