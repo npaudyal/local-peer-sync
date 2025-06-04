@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Desktop clipboard handler with ENHANCED Windows file detection
 pub struct DesktopClipboardHandler {
@@ -70,7 +70,7 @@ impl DesktopClipboardHandler {
             return Ok(Vec::new());
         }
 
-        info!("🔍 Starting smart file detection...");
+        debug!("🔍 Starting smart file detection...");
 
         // Get current clipboard text
         let clipboard_text = {
